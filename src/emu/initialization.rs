@@ -21,6 +21,7 @@ use crate::{get_bit, kuser_shared, set_bit, structures, winapi::winapi32, winapi
 
 use crate::maps::heap_allocation::O1Heap;
 use fast_log::appender::{Command, FastLogRecord, RecordFormat};
+use crate::emu::object_handle::HandleManagement;
 
 pub struct CustomLogFormat;
 impl RecordFormat for CustomLogFormat {
@@ -99,6 +100,7 @@ impl Emu {
             last_error: 0,
             is_api_run: false,
             is_break_on_api: false,
+            handle_management: HandleManagement::new(),
         }
     }
 

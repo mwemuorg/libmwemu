@@ -1,6 +1,6 @@
 use crate::emu;
 use crate::emu::object_handle::file_handle::{FILE_SYSTEM, INVALID_HANDLE_VALUE};
-use crate::emu::object_handle::{FileHandle, HANDLE_MANGEMENT};
+use crate::emu::object_handle::{FileHandle};
 use log::error;
 
 pub fn CreateFileA(emu: &mut emu::Emu) {
@@ -29,7 +29,7 @@ pub fn CreateFileA(emu: &mut emu::Emu) {
     );
 
     // Map the Windows path to the emulator's path
-    let emu_path = FILE_SYSTEM.get().unwrap().read().unwrap().local_to_windows_path(&name_utf8).unwrap();
+    let emu_path = FILE_SYSTEM.wait().local_to_windows_path(&name_utf8).unwrap();
     let emu_path_str = emu_path.to_string();
 
     // Attempt to create or open the file using the FileHandle struct
@@ -42,9 +42,7 @@ pub fn CreateFileA(emu: &mut emu::Emu) {
     ) {
         Ok(file_handle) => {
             // Use the global HANDLE_MANGEMENT to create and store the handle
-            let mut handle_mgmt = HANDLE_MANGEMENT.lock().unwrap();
-            // The slab key returned is the handle ID
-            let handle_key = handle_mgmt.insert_file_handle(file_handle);
+            let handle_key = emu.handle_management.insert_file_handle(file_handle);
             emu.regs_mut().rax = handle_key as u64; // Handle is the slab key
             log_red!(
                 emu,

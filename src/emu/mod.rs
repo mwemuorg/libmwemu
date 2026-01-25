@@ -23,6 +23,7 @@ use crate::{
     structures::MemoryOperation,
     thread_context::ThreadContext,
 };
+use crate::emu::object_handle::HandleManagement;
 
 mod banzai;
 mod call_stack;
@@ -106,4 +107,5 @@ pub struct Emu {
     pub last_error: u32,
     pub is_api_run: bool,
     pub is_break_on_api: bool, // this value will only be modify internally for python use case
+    pub handle_management: HandleManagement,
 }

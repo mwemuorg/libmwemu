@@ -2,10 +2,11 @@ use std::sync::RwLock;
 use std::fs;
 use std::fs::File;
 use std::fs::ReadDir;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use ahash::{AHashMap, HashMap, HashMapExt, HashSet, HashSetExt};
 use std::io;
+use std::os::windows::fs::MetadataExt;
 use std::sync::OnceLock;
 
 #[cfg(target_os = "windows")]
@@ -90,7 +91,7 @@ struct FileHandleManagement {
     handle_management: HashMap<u32, FileHandle>, // Fixed typo: handleMagemement -> handle_management
 }
 
-pub static FILE_SYSTEM: OnceLock<RwLock<FileSystem>> = OnceLock::new();
+pub static FILE_SYSTEM: OnceLock<FileSystem> = OnceLock::new();
 
 pub fn init_file_system() -> std::io::Result<()> {
     let builder = FileSystemBuilder::new()
@@ -103,7 +104,7 @@ pub fn init_file_system() -> std::io::Result<()> {
     let fs = builder.build()?;
 
     FILE_SYSTEM
-        .set(RwLock::new(fs))
+        .set(fs)
         .map_err(|_| std::io::Error::new(
             std::io::ErrorKind::Other,
             "FileSystem already initialized"
@@ -119,7 +120,6 @@ pub struct FileHandle {
     is_dir: bool,  // Whether this handle represents a directory
     // --- Rust File/ReadDir Objects ---
     file: Option<File>,   // Actual Rust file handle (for files)
-    dir: Option<ReadDir>, // Actual Rust directory iterator handle (for directories opened for enumeration)
     // --- WinAPI Handle State ---
     access_mode: u32,          // Access flags (e.g., GENERIC_READ, GENERIC_WRITE)
     creation_disposition: u32, // How the file was opened (CREATE_ALWAYS, OPEN_EXISTING, etc.)
@@ -133,6 +133,7 @@ pub struct FileHandle {
     is_eof: bool,   // End-of-file flag
                     // --- Example: Potential for caching or other emulation-specific data ---
                     // cache: Option<SomeCacheType>,
+    file_size: u64,
 }
 
 // Corrected function signature and implementation
@@ -149,66 +150,41 @@ impl FileHandle {
     ) -> Result<FileHandle, Box<dyn std::error::Error>> {
         // Return Result for better error handling
 
-        let resolved_path = FILE_SYSTEM.get().unwrap().read().unwrap().translate(&WindowsPath::from_path(&name).unwrap()).unwrap();
+        let windows_path = WindowsPath::from_path(&name)?;
+        let resolved_path = FILE_SYSTEM.wait().translate(&windows_path)?;
         println!(
             "Attempting to resolve path: {} -> {:?}",
             name, resolved_path
         );
 
-        // Check if the target is a directory first
-        let metadata_result = fs::metadata(&resolved_path);
-        let is_dir = match metadata_result {
-            Ok(metadata) => metadata.is_dir(),
-            Err(e) => {
-                // Handle case where path doesn't exist based on creation_disposition
-                match creation_disposition {
-                    // Example: CREATE_NEW, CREATE_ALWAYS, OPEN_ALWAYS might allow creation
-                    // OPEN_EXISTING, TRUNCATE_EXISTING require it to exist
-                    3 | 4 => false, // OPEN_EXISTING (3) or TRUNCATE_EXISTING (4) -> error if doesn't exist
-                    _ => {
-                        // For other dispositions, assume it might be a file to create
-                        // This is a simplification; real WinAPI logic is more complex.
-                        // Let the File::open/create handle the error if necessary.
-                        false
-                    }
-                }
-            }
-        };
+        let metadata = fs::metadata(&resolved_path)?;
 
         // Determine if it's a directory *after* potential creation logic (simplified here)
-        let is_dir = fs::metadata(&resolved_path)
-            .map(|m| m.is_dir())
-            .unwrap_or(false);
+        let is_dir = metadata.is_dir();
 
-        let (file, dir) = if is_dir {
-            // If it's a directory, we might open it for enumeration (ReadDir) depending on access_mode
-            // For simplicity, let's assume opening a directory handle (not enumeration) might just store the path
-            // and set file=None, dir=None initially, or use ReadDir if specific flags are set.
-            // Let's assume basic directory handle (not enumeration) for now.
-            (None, None) // Or potentially Some(fs::read_dir(&resolved_path)?) if enumeration is intended by access_mode
+        let file = if is_dir {
+            // we haven't support opening a directory yet
+            return Err(Box::new(std::io::Error::new(ErrorKind::InvalidInput, "Calling handle other than File isn't support yet")));
         } else {
             // It's a file, attempt to open/create based on creation_disposition and access_mode
             let file_result = match creation_disposition {
                 1 => File::create(&resolved_path), // CREATE_NEW
                 2 => File::create(&resolved_path), // CREATE_ALWAYS
                 3 => File::open(&resolved_path),   // OPEN_EXISTING
-                4 => File::options().read(true).write(true).open(&resolved_path), // TRUNCATE_EXISTING
-                5 => File::options().read(true).open(&resolved_path),             // OPEN_ALWAYS
-                _ => File::options()
-                    .read(true)
-                    .write(true)
-                    .create(true)
-                    .open(&resolved_path), // Default or unknown, try open with create
+                5 => File::options().read(true).write(true).open(&resolved_path), // TRUNCATE_EXISTING
+                4 => File::options().read(true).open(&resolved_path),             // OPEN_ALWAYS
+                _ =>
+                    return Err(Box::new(std::io::Error::new(ErrorKind::InvalidInput, "Unknown or unsupported access mode"))),
             };
-            (Some(file_result?), None)
+            Some(file_result?)
         };
 
+        let file_size = metadata.len();
         Ok(FileHandle {
             name,
             path: resolved_path,
             is_dir,
             file,
-            dir,
             access_mode,
             creation_disposition,
             flags_and_attributes,
@@ -216,12 +192,13 @@ impl FileHandle {
             sharing_mode,
             is_valid: true, // Assume valid upon creation
             is_eof: false,  // Assume not at EOF initially
+            file_size,
         })
     }
 
     // Example methods that might be called by emulated WinAPI functions
     pub fn read(&mut self, buffer: &mut [u8]) -> Result<usize, io::Error> {
-        if !self.is_valid || self.is_dir {
+        if !self.is_valid {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Invalid handle or operation for directory",
@@ -231,10 +208,7 @@ impl FileHandle {
             let bytes_read = f.read(buffer)?;
             self.file_position += bytes_read as u64;
             // Update EOF flag if necessary
-            if bytes_read < buffer.len() && bytes_read == 0 {
-                // This might indicate EOF, but depends on read behavior
-                // A more robust check might involve seeking to end and comparing position
-                // For now, assume if read returns 0, we are at EOF
+            if self.file_position >= self.file_size && bytes_read == 0 {
                 self.is_eof = true;
             } else {
                 self.is_eof = false;
@@ -249,7 +223,7 @@ impl FileHandle {
     }
 
     pub fn write(&mut self, buffer: &[u8]) -> Result<usize, io::Error> {
-        if !self.is_valid || self.is_dir {
+        if !(self.is_valid && !self.is_dir) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Invalid handle or operation for directory",
@@ -291,7 +265,6 @@ impl FileHandle {
     pub fn close(&mut self) {
         // Release resources
         self.file.take(); // Drops the File, closing it
-        self.dir.take(); // Drops the ReadDir
         self.is_valid = false;
         // Other cleanup if necessary
     }
@@ -327,7 +300,7 @@ impl FileHandle {
 #[derive(Debug, Clone)]
 pub struct FileSystem {
     root: PathBuf,
-    mappings: HashMap<WindowsPath, PathBuf>,
+    mappings: AHashMap<WindowsPath, PathBuf>,
 }
 
 impl FileSystem {
@@ -336,7 +309,7 @@ impl FileSystem {
         let root = Self::canonical(root.as_ref())?;
         Ok(Self {
             root,
-            mappings: HashMap::with_capacity(10),
+            mappings: AHashMap::with_capacity(10),
         })
     }
 

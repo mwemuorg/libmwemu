@@ -15,13 +15,6 @@ handle id to get the right handle. In the document, it doesn't specific that the
 
 */
 
-pub static HANDLE_MANGEMENT: std::sync::LazyLock<
-        Arc<Mutex<crate::emu::object_handle::HandleManagement>>,
-    > = std::sync::LazyLock::new(|| {
-    Arc::new(Mutex::new(
-        crate::emu::object_handle::HandleManagement::new(),
-    ))
-});
 enum HandleType {
     FileHandle(FileHandle),
     MappingHandle(MappingHandle),

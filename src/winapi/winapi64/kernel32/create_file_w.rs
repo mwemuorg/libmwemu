@@ -29,7 +29,7 @@ pub fn CreateFileW(emu: &mut emu::Emu) {
     );
 
     // Map the Windows path to the emulator's path
-    let emu_path = FILE_SYSTEM.get().unwrap().read().unwrap().local_to_windows_path(&name_utf8).unwrap();
+    let emu_path = FILE_SYSTEM.wait().local_to_windows_path(&name_utf8).unwrap();
     let emu_path_str = emu_path.to_string();
 
     // Attempt to create or open the file using the FileHandle struct
@@ -41,8 +41,7 @@ pub fn CreateFileW(emu: &mut emu::Emu) {
         dw_share_mode, // Pass the parsed struct
     ) {
         Ok(file_handle) => {
-            let mut handle_mgmt = crate::emu::object_handle::HANDLE_MANGEMENT.lock().unwrap();
-            let handle_key = handle_mgmt.insert_file_handle(file_handle);
+            let handle_key = emu.handle_management.insert_file_handle(file_handle);
             emu.regs_mut().rax = handle_key as u64;
             log_red!(
                 emu,
