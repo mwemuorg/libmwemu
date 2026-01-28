@@ -29,3 +29,15 @@ pub fn stack32_test() {
 
     assert!(emu.regs().get_esp() > base);
 }
+
+#[test]
+fn initial_test_stack_alignment_32bit_bare_metal() {
+    let mut emu = emu32();
+    emu.init_cpu();
+
+    assert_eq!(
+        emu.regs().get_esp() % 4,
+        0,
+        "in 32bits stack has to be aligned to 4 bytes"
+    );
+}
