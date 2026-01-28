@@ -1,10 +1,11 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use thiserror::Error;
+use std::fmt;
 
 #[derive(Error, Debug)]
 pub enum HiveError {
@@ -54,7 +55,7 @@ pub(crate) struct ValueBlock {
     name_len: i16,
     size: i32,
     data_offset: i32,
-    value_type: i32,
+    value_type: RegType,
     name: [u8; 255],
 }
 
@@ -64,6 +65,55 @@ pub enum RegistryValue {
     Dword(u32),
     Binary(Vec<u8>),
     MultiString(Vec<String>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u32)]
+pub enum RegType {
+    None = 0,                  // REG_NONE
+    Sz = 1,                    // REG_SZ - Unicode null-terminated string
+    ExpandSz = 2,              // REG_EXPAND_SZ - String with env vars (%PATH%)
+    Binary = 3,                // REG_BINARY - Binary data
+    DWord = 4,                 // REG_DWORD / REG_DWORD_LITTLE_ENDIAN - 32-bit LE integer
+    DWordBigEndian = 5,        // REG_DWORD_BIG_ENDIAN - 32-bit BE integer
+    Link = 6,                  // REG_LINK - Symbolic link (Unicode string)
+    MultiSz = 7,               // REG_MULTI_SZ - Multiple Unicode strings (double-null terminated)
+    ResourceList = 8,          // REG_RESOURCE_LIST - Plug and Play resource list
+    FullResourceDescriptor = 9,// REG_FULL_RESOURCE_DESCRIPTOR - Full resource descriptor
+    ResourceRequirementsList = 10, // REG_RESOURCE_REQUIREMENTS_LIST
+    QWord = 11,                // REG_QWORD / REG_QWORD_LITTLE_ENDIAN - 64-bit LE integer
+}
+
+impl TryFrom<u32> for RegType {
+    type Error = RegTypeError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::None),
+            1 => Ok(Self::Sz),
+            2 => Ok(Self::ExpandSz),
+            3 => Ok(Self::Binary),
+            4 => Ok(Self::DWord),
+            5 => Ok(Self::DWordBigEndian),
+            6 => Ok(Self::Link),
+            7 => Ok(Self::MultiSz),
+            8 => Ok(Self::ResourceList),
+            9 => Ok(Self::FullResourceDescriptor),
+            10 => Ok(Self::ResourceRequirementsList),
+            11 => Ok(Self::QWord),
+            _ => Err(RegTypeError(value)),
+        }
+    }
+}
+
+/// Error returned when an invalid registry type value is encountered
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RegTypeError(pub u32);
+
+impl fmt::Display for RegTypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Invalid registry type value: {}", self.0)
+    }
 }
 
 pub struct HiveKey<'a, R: Read + Seek> {
@@ -83,7 +133,6 @@ struct HiveCache {
     main_key_offset: u64,
     subpaths: Vec<HiveSubpath>,
 }
-
 pub struct HiveParser<R: Read + Seek> {
     pub(crate) reader: R, // Own the file instead of referencing it
     pub(crate) base_offset: u64,
@@ -182,7 +231,7 @@ impl ValueBlock {
         let name_len = reader.read_i16::<LittleEndian>()?;
         let size = reader.read_i32::<LittleEndian>()?;
         let data_offset = reader.read_i32::<LittleEndian>()?;
-        let value_type = reader.read_i32::<LittleEndian>()?;
+        let value_type = (reader.read_i32::<LittleEndian>()? as u32).try_into().unwrap();
 
         // Skip flags and dummy (4 bytes)
         let mut dummy = [0u8; 4];
@@ -242,7 +291,7 @@ impl<'a, R: Read + Seek> HiveKey<'a, R> {
                 continue;
             }
 
-            let subkey_abs_offset = self.base_offset + subkey_offset as u64;
+            let subkey_abs_offset = self.base_offset + subkey_offset;
             let subkey = KeyBlock::read_from_reader(self.reader, subkey_abs_offset)?;
 
             let name = subkey.get_name()?;
@@ -271,7 +320,7 @@ impl<'a, R: Read + Seek> HiveKey<'a, R> {
                 continue;
             }
 
-            let value_abs_offset = self.base_offset + value_offset as u64;
+            let value_abs_offset = self.base_offset + value_offset;
             let value = ValueBlock::read_from_reader(self.reader, value_abs_offset)?;
 
             let name = value.get_name()?;
@@ -300,7 +349,7 @@ impl<'a, R: Read + Seek> HiveKey<'a, R> {
                 continue;
             }
 
-            let value_abs_offset = self.base_offset + value_offset as u64;
+            let value_abs_offset = self.base_offset + value_offset;
             let value = ValueBlock::read_from_reader(self.reader, value_abs_offset)?;
 
             let value_name = value.get_name()?;
@@ -336,7 +385,7 @@ impl<'a, R: Read + Seek> HiveKey<'a, R> {
                 continue;
             }
 
-            let value_abs_offset = self.base_offset + value_offset as u64;
+            let value_abs_offset = self.base_offset + value_offset;
             let value = ValueBlock::read_from_reader(self.reader, value_abs_offset)?;
 
             let value_name = value.get_name()?;
@@ -372,25 +421,25 @@ impl<'a, R: Read + Seek> HiveKey<'a, R> {
         self.reader.seek(SeekFrom::Start(data_offset))?;
 
         match value.value_type {
-            1 | 2 => {
+            RegType::Sz | RegType::ExpandSz => {
                 // REG_SZ, REG_EXPAND_SZ
                 let mut buffer = vec![0u8; data_size as usize];
                 self.reader.read_exact(&mut buffer)?;
                 let text = String::from_utf8_lossy(&buffer).into_owned();
                 Ok(RegistryValue::String(text))
             }
-            3 => {
+            RegType::Binary => {
                 // REG_BINARY
                 let mut buffer = vec![0u8; data_size as usize];
                 self.reader.read_exact(&mut buffer)?;
                 Ok(RegistryValue::Binary(buffer))
             }
-            4 => {
+            RegType::DWord => {
                 // REG_DWORD
                 let dword = self.reader.read_u32::<LittleEndian>()?;
                 Ok(RegistryValue::Dword(dword))
             }
-            7 => {
+            RegType::MultiSz => {
                 // REG_MULTI_SZ
                 let mut buffer = vec![0u8; data_size as usize];
                 self.reader.read_exact(&mut buffer)?;
@@ -481,7 +530,7 @@ impl<R: Read + Seek> HiveParser<R> {
                 continue;
             }
 
-            let subkey_abs_offset = self.base_offset + subkey_offset as u64;
+            let subkey_abs_offset = self.base_offset + subkey_offset;
             let subkey = KeyBlock::read_from_reader(&mut self.reader, subkey_abs_offset)?;
 
             let subkey_name = subkey.get_name()?;
@@ -678,7 +727,7 @@ mod tests {
             name_len: test_name.len() as i16,
             size: 4,
             data_offset: 1024,
-            value_type: 3, // REG_BINARY
+            value_type: 3.try_into().unwrap(), // REG_BINARY
             name: name_buffer,
         };
 
@@ -852,7 +901,7 @@ mod tests {
         assert_eq!(value_block.name_len, 9);
         assert_eq!(value_block.size, 4);
         assert_eq!(value_block.data_offset, 1024);
-        assert_eq!(value_block.value_type, 4);
+        assert_eq!(value_block.value_type, 4.try_into().unwrap());
         assert_eq!(value_block.get_name().unwrap().into_bytes(), b"MyValue\0\0");
     }
 }
