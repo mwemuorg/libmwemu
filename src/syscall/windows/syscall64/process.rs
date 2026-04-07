@@ -385,7 +385,14 @@ pub fn nt_terminate_process(emu: &mut Emu) {
         return;
     }
 
-    emu.process_terminated = true;
+    // Only propagate termination to the outer run() when we are in the main
+    // execution loop (call_depth == 0). Inside a call64 context (e.g. the
+    // LdrInitializeThunk bootstrap) ntdll may call NtTerminateProcess on an
+    // error path; we still stop the inner run() via is_running but do not
+    // poison process_terminated so that the outer run() can continue.
+    if emu.call_depth == 0 {
+        emu.process_terminated = true;
+    }
     emu.is_running.store(0, Ordering::Relaxed);
     emu.regs_mut().rax = STATUS_SUCCESS;
 }

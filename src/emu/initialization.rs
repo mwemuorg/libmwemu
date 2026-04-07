@@ -73,6 +73,7 @@ impl Emu {
             max_pos: None,
             force_break: false,
             process_terminated: false,
+            call_depth: 0,
             force_reload: false,
             tls_callbacks: Vec::new(),
             main_thread_cont: 0,

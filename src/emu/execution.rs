@@ -19,6 +19,12 @@ macro_rules! round_to {
     }};
 }
 
+/// Maximum nesting depth for emulator-driven call64/call32/linux_call64 invocations.
+/// Normal emulated `call` instructions do not increment this counter — only explicit
+/// host-side calls (loader bootstrap, TLS callbacks, etc.) do. A depth beyond this
+/// most likely indicates a bug in the emulator infrastructure.
+const MAX_CALL_DEPTH: u32 = 32;
+
 impl Emu {
     #[inline]
     pub fn stop(&mut self) {
@@ -44,7 +50,13 @@ impl Emu {
         let ret_addr = self.regs().get_eip();
         self.stack_push32(ret_addr as u32);
         self.regs_mut().set_eip(addr);
-        self.run(Some(ret_addr))?;
+        if self.call_depth >= MAX_CALL_DEPTH {
+            return Err(MwemuError::new("call depth limit reached"));
+        }
+        self.call_depth += 1;
+        let result = self.run(Some(ret_addr));
+        self.call_depth -= 1;
+        result?;
         self.regs_mut().set_esp(orig_stack);
         Ok(self.regs().get_eax() as u32)
     }
@@ -106,7 +118,13 @@ impl Emu {
         self.regs_mut().rip = addr;
 
         // emulate the function until return address is reached
-        self.run(Some(ret_addr))?;
+        if self.call_depth >= MAX_CALL_DEPTH {
+            return Err(MwemuError::new("call depth limit reached"));
+        }
+        self.call_depth += 1;
+        let result = self.run(Some(ret_addr));
+        self.call_depth -= 1;
+        result?;
 
         // recover stack and  return rax
         self.regs_mut().rsp = orig_stack;
@@ -170,7 +188,13 @@ impl Emu {
         self.regs_mut().rip = addr;
 
         // emulate the function until return address is reached
-        self.run(Some(ret_addr))?;
+        if self.call_depth >= MAX_CALL_DEPTH {
+            return Err(MwemuError::new("call depth limit reached"));
+        }
+        self.call_depth += 1;
+        let result = self.run(Some(ret_addr));
+        self.call_depth -= 1;
+        result?;
 
         // recover stack and  return rax
         self.regs_mut().rsp = orig_stack;
