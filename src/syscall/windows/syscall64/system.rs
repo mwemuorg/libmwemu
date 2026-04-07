@@ -234,3 +234,58 @@ pub fn nt_trace_event(emu: &mut Emu) {
     );
     emu.regs_mut().rax = STATUS_SUCCESS;
 }
+
+/// `NtQueryInformationTransactionManager` — syscall 0x15a.
+/// x64: RCX=`TransactionManagerHandle`, RDX=`InformationClass`,
+///      R8=`Buffer`, R9=`BufferLength`, `[rsp+0x28]`=`ReturnLength` (PULONG).
+///
+/// Kernel Transaction Manager (KTM) query. Called by ntdll during loader init
+/// to probe transaction support. We handle the two most common classes and
+/// return STATUS_INVALID_INFO_CLASS for everything else.
+///
+/// Information classes:
+///   0 = TransactionManagerBasicInformation  — GUID(16) + VirtualClock(8) = 24 bytes
+///   1 = TransactionManagerLogInformation    — GUID(16) = 16 bytes
+pub fn nt_query_information_transaction_manager(emu: &mut Emu) {
+    let _handle = emu.regs().rcx;
+    let info_class = emu.regs().rdx;
+    let buffer = emu.regs().r8;
+    let buffer_len = emu.regs().r9;
+    let rsp = emu.regs().rsp;
+    let return_length_ptr = emu.maps.read_qword(rsp + 0x28).unwrap_or(0);
+
+    log_orange!(
+        emu,
+        "syscall 0x{:x}: NtQueryInformationTransactionManager class: {} buf: 0x{:x} len: {}",
+        WIN64_NTQUERYINFORMATIONTRANSACTIONMANAGER,
+        info_class,
+        buffer,
+        buffer_len
+    );
+
+    let (needed, _desc): (u64, &str) = match info_class {
+        0 => (24, "BasicInformation"),   // GUID(16) + LARGE_INTEGER(8)
+        1 => (16, "LogInformation"),     // GUID(16)
+        _ => {
+            emu.regs_mut().rax = STATUS_INVALID_INFO_CLASS;
+            return;
+        }
+    };
+
+    write_return_length(emu, return_length_ptr, needed as u32);
+
+    if buffer == 0 || buffer_len < needed {
+        emu.regs_mut().rax = STATUS_BUFFER_TOO_SMALL;
+        return;
+    }
+
+    if !emu.maps.is_mapped(buffer) {
+        emu.regs_mut().rax = STATUS_ACCESS_VIOLATION;
+        return;
+    }
+
+    // Zero-fill the output — no real KTM state to return.
+    emu.maps.memset(buffer, 0, needed as usize);
+
+    emu.regs_mut().rax = STATUS_SUCCESS;
+}

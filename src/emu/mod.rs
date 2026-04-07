@@ -99,6 +99,7 @@ pub struct Emu {
     pub is_running: Arc<AtomicU32>, // thread-safe flag for emulation running state
     pub now: Instant,          // timestamp of emulation start (wall-clock timing)
     pub force_break: bool,     // set by breakpoints, memory violations, etc. to stop execution
+    pub process_terminated: bool, // set by NtTerminateProcess; prevents run() from resetting is_running
     pub force_reload: bool,    // trigger instruction re-decode
     pub run_until_ret: bool,   // step-over mode: run until next RET
     pub rng: RefCell<rand::rngs::ThreadRng>,

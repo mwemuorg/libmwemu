@@ -230,6 +230,7 @@ impl From<SerializableEmu> for Emu {
             is_running: Arc::new(atomic::AtomicU32::new(serialized.is_running)),
             now: serialized.now.to_instant(),
             force_break: serialized.force_break,
+            process_terminated: false,
             force_reload: serialized.force_reload,
             run_until_ret: serialized.run_until_ret,
             rng: RefCell::new(rand::rng()),

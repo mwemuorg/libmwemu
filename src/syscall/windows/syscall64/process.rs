@@ -385,6 +385,7 @@ pub fn nt_terminate_process(emu: &mut Emu) {
         return;
     }
 
+    emu.process_terminated = true;
     emu.is_running.store(0, Ordering::Relaxed);
     emu.regs_mut().rax = STATUS_SUCCESS;
 }

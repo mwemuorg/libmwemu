@@ -41,6 +41,7 @@ pub fn gateway(emu: &mut Emu) {
         WIN64_NTWAITFORALERTBYTHREADID => sync::nt_wait_for_alert_by_thread_id(emu),
         WIN64_NTQUERYSECURITYATTRIBUTESTOKEN => process::nt_query_security_attributes_token(emu),
         WIN64_NTALLOCATEUSERPHYSICALPAGESEX => memory::nt_allocate_user_physical_pages_ex(emu),
+        WIN64_NTQUERYINFORMATIONTRANSACTIONMANAGER => system::nt_query_information_transaction_manager(emu),
         _ => {
             let name = what_syscall(nr);
             log_orange!(

@@ -717,6 +717,10 @@ impl Emu {
     )]
     #[allow(deprecated)] // delegates to step_multi_threaded (also deprecated)
     pub fn run_multi_threaded(&mut self, end_addr: Option<u64>) -> Result<u64, MwemuError> {
+        if self.process_terminated {
+            return Err(MwemuError::new("process terminated (NtTerminateProcess)"));
+        }
+
         match self.maps.get_mem_by_addr(self.regs().rip) {
             Some(_) => {}
             None => {
@@ -956,7 +960,11 @@ impl Emu {
     pub fn run_single_threaded(&mut self, end_addr: Option<u64>) -> Result<u64, MwemuError> {
         let is_aarch64 = self.cfg.arch.is_aarch64();
 
-        match self.maps.get_mem_by_addr(self.pc()) {
+        if self.process_terminated {
+            return Err(MwemuError::new("process terminated (NtTerminateProcess)"));
+        }
+
+        match self.maps.get_mem_by_addr(self.regs().pc()) {
             Some(_) => {}
             None => {
                 log::trace!("Cannot start emulation, pc pointing to unmapped area");
