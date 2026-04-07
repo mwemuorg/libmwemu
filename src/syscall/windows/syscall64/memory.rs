@@ -4,6 +4,27 @@ use crate::maps::mem64::Permission;
 use crate::windows::structures::MemoryBasicInformation64;
 use iced_x86::{Instruction, Mnemonic, OpKind, Register};
 
+fn permission_to_nt_page_protection(perm: Permission) -> u32 {
+    const PAGE_NOACCESS: u32 = 0x01;
+    const PAGE_READONLY: u32 = 0x02;
+    const PAGE_READWRITE: u32 = 0x04;
+    const PAGE_EXECUTE: u32 = 0x10;
+    const PAGE_EXECUTE_READ: u32 = 0x20;
+    const PAGE_EXECUTE_READWRITE: u32 = 0x40;
+    let r = perm.contains(Permission::READ);
+    let w = perm.contains(Permission::WRITE);
+    let x = perm.contains(Permission::EXECUTE);
+    match (r, w, x) {
+        (false, false, false) => PAGE_NOACCESS,
+        (true, false, false) => PAGE_READONLY,
+        (true, true, false) => PAGE_READWRITE,
+        (false, false, true) => PAGE_EXECUTE,
+        (true, false, true) => PAGE_EXECUTE_READ,
+        (true, true, true) => PAGE_EXECUTE_READWRITE,
+        _ => PAGE_NOACCESS,
+    }
+}
+
 fn nt_page_protection_to_permission(protect: u32) -> Permission {
     const PAGE_READONLY: u32 = 0x02;
     const PAGE_READWRITE: u32 = 0x04;
@@ -175,28 +196,51 @@ pub fn nt_query_virtual_memory(emu: &mut Emu) {
         return;
     }
 
-    if !emu.maps.is_mapped(base_address) {
-        emu.regs_mut().rax = STATUS_INVALID_PARAMETER;
-        return;
-    }
-
-    let base = emu.maps.get_addr_base(base_address).unwrap_or(0);
-    let region_size = emu
-        .maps
-        .get_mem_by_addr(base_address)
-        .map(|m| m.size() as u64)
-        .unwrap_or(0);
-    let alloc_protect = PAGE_EXECUTE | PAGE_READWRITE;
-    let mem_info = MemoryBasicInformation64 {
-        base_address: base,
-        allocation_base: base,
-        allocation_protect: alloc_protect,
-        partition_id: 0,
-        reserved: 0,
-        region_size,
-        state: MEM_COMMIT,
-        protect: alloc_protect,
-        typ: MEM_PRIVATE,
+    let mem_info = if !emu.maps.is_mapped(base_address) {
+        // Real Windows returns MEM_FREE for unallocated pages, not an error.
+        // ntdll's heap-walk loop uses this to discover free virtual address ranges;
+        // returning STATUS_INVALID_PARAMETER causes it to exit the loop early and
+        // skip heap initialization entirely.
+        let page_base = base_address & !0xFFF;
+        let region_size = emu
+            .maps
+            .next_mapped_addr(page_base)
+            .map(|next| next.saturating_sub(page_base))
+            .unwrap_or(0x1000);
+        MemoryBasicInformation64 {
+            base_address: page_base,
+            allocation_base: 0,
+            allocation_protect: 0,
+            partition_id: 0,
+            reserved: 0,
+            region_size,
+            state: MEM_FREE,
+            protect: PAGE_NOACCESS,
+            typ: 0,
+        }
+    } else {
+        let base = emu.maps.get_addr_base(base_address).unwrap_or(0);
+        let region_size = emu
+            .maps
+            .get_mem_by_addr(base_address)
+            .map(|m| m.size() as u64)
+            .unwrap_or(0);
+        let protect = emu
+            .maps
+            .get_mem_by_addr(base_address)
+            .map(|m| permission_to_nt_page_protection(m.permission()))
+            .unwrap_or(PAGE_READWRITE);
+        MemoryBasicInformation64 {
+            base_address: base,
+            allocation_base: base,
+            allocation_protect: protect,
+            partition_id: 0,
+            reserved: 0,
+            region_size,
+            state: MEM_COMMIT,
+            protect,
+            typ: MEM_PRIVATE,
+        }
     };
 
     mem_info.save(memory_information, &mut emu.maps);
@@ -616,8 +660,15 @@ pub fn nt_protect_virtual_memory(emu: &mut Emu) {
     let base = emu.maps.read_qword(base_ptr).unwrap_or(0);
     let _region_sz = emu.maps.read_qword(region_sz_ptr).unwrap_or(0);
 
+    // Read the previous protection BEFORE changing it.
+    let old_protect = if let Some(mem) = emu.maps.get_mem_by_addr(base) {
+        permission_to_nt_page_protection(mem.permission())
+    } else {
+        0x04 // PAGE_READWRITE fallback
+    };
+
     if old_protect_ptr != 0 {
-        let _ = emu.maps.write_dword(old_protect_ptr as u64, new_protect);
+        let _ = emu.maps.write_dword(old_protect_ptr as u64, old_protect);
     }
 
     if let Some(mem) = emu.maps.get_mem_by_addr_mut(base) {
@@ -777,10 +828,12 @@ pub fn nt_allocate_user_physical_pages_ex(emu: &mut Emu) {
         num_pages
     );
 
-    // Write back 0 pages allocated before returning the error.
+    // Return SUCCESS with 0 pages allocated (physical memory unavailable in emulator).
+    // Writing 0 back to *NumberOfPages tells ntdll no pages were actually allocated,
+    // so the segment heap falls back to non-AWE mode without treating it as fatal.
     if num_pages_ptr != 0 && emu.maps.is_mapped(num_pages_ptr) {
         let _ = emu.maps.write_qword(num_pages_ptr, 0);
     }
 
-    emu.regs_mut().rax = STATUS_PRIVILEGE_NOT_HELD;
+    emu.regs_mut().rax = STATUS_SUCCESS;
 }

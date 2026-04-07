@@ -618,6 +618,16 @@ impl Maps {
         None
     }
 
+    /// Return the base address of the first mapped region that starts **after** `addr`,
+    /// or `None` if no such region exists.  Used by `NtQueryVirtualMemory` to compute
+    /// the size of a free (MEM_FREE) virtual-address range.
+    pub fn next_mapped_addr(&self, addr: u64) -> Option<u64> {
+        self.maps
+            .range(addr.saturating_add(1)..)
+            .next()
+            .map(|(&start, _)| start)
+    }
+
     #[inline(always)]
     pub fn is_mapped(&self, addr: u64) -> bool {
         self.get_mem_by_addr(addr).is_some()

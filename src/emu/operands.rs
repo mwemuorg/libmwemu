@@ -446,13 +446,19 @@ impl Emu {
             OpKind::Immediate8to32 => ins.immediate8to32() as u32 as u64,
             OpKind::Immediate8to16 => ins.immediate8to16() as u16 as u64,
             OpKind::Register => self.regs().get_reg(ins.op_register(noperand)),
-            OpKind::Memory => self
-                .handle_memory_get_operand(ins, noperand, do_derref)
-                .expect(&format!(
-                    "handle_memory_get_operand failed for {:?} op {}",
-                    ins.mnemonic(),
-                    noperand
-                )),
+            OpKind::Memory => {
+                match self.handle_memory_get_operand(ins, noperand, do_derref) {
+                    Some(v) => v,
+                    None => {
+                        log::trace!(
+                            "get_operand_value: unmapped memory access in {:?} op {}",
+                            ins.mnemonic(),
+                            noperand
+                        );
+                        return None;
+                    }
+                }
+            }
             _ => unimplemented!("unimplemented operand type {:?}", ins.op_kind(noperand)),
         };
         Some(value)

@@ -30,6 +30,10 @@ const SYSTEM_CODE_INTEGRITY_INFORMATION: u64 = 103;
 /// modern builds; real kernel returns `STATUS_SUCCESS` with a zeroed policy buffer (see
 /// `trace_LdrInitializeThunk.txt` around `NtQuerySystemInformation`, `rcx == 0xC0`).
 const SYSTEM_CODE_INTEGRITY_POLICY_INFORMATION: u64 = 0xC0;
+/// `SystemExtendedHandleInformation` (0x37) — returns the handle table; we return 0 handles.
+const SYSTEM_EXTENDED_HANDLE_INFORMATION: u64 = 0x37;
+/// `SystemSupportedProcessorArchitectures2` (0xC5) — returns supported CPU architectures.
+const SYSTEM_SUPPORTED_PROCESSOR_ARCHITECTURES2: u64 = 0xC5;
 
 /// `NtQuerySystemInformation` — x64: RCX `Class`, RDX `Buffer`, R8 `Length`, R9 `ReturnLength`.
 pub fn nt_query_system_information(emu: &mut Emu) {
@@ -180,6 +184,37 @@ pub fn nt_query_system_information(emu: &mut Emu) {
                 let _ = emu.maps.write_byte(info + u64::from(off), 0);
             }
             write_return_length(emu, ret_len_ptr, len);
+            emu.regs_mut().rax = STATUS_SUCCESS;
+        }
+
+        SYSTEM_EXTENDED_HANDLE_INFORMATION => {
+            // Returns SYSTEM_HANDLE_INFORMATION_EX: { NumberOfHandles: ULONG_PTR, Reserved: ULONG_PTR, ... }
+            // Return 0 handles — minimal valid response.
+            const HEADER: u32 = 16; // NumberOfHandles (8) + Reserved (8)
+            if len < HEADER {
+                write_return_length(emu, ret_len_ptr, HEADER);
+                emu.regs_mut().rax = STATUS_INFO_LENGTH_MISMATCH;
+                return;
+            }
+            for off in 0..HEADER {
+                let _ = emu.maps.write_byte(info + u64::from(off), 0);
+            }
+            write_return_length(emu, ret_len_ptr, HEADER);
+            emu.regs_mut().rax = STATUS_SUCCESS;
+        }
+
+        SYSTEM_SUPPORTED_PROCESSOR_ARCHITECTURES2 => {
+            // Returns supported CPU architecture list; zero-fill for x64-only stub.
+            const NEED: u32 = 8;
+            if len < NEED {
+                write_return_length(emu, ret_len_ptr, NEED);
+                emu.regs_mut().rax = STATUS_INFO_LENGTH_MISMATCH;
+                return;
+            }
+            for off in 0..NEED {
+                let _ = emu.maps.write_byte(info + u64::from(off), 0);
+            }
+            write_return_length(emu, ret_len_ptr, NEED);
             emu.regs_mut().rax = STATUS_SUCCESS;
         }
 

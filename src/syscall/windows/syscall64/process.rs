@@ -532,3 +532,36 @@ pub fn nt_query_security_attributes_token(emu: &mut Emu) {
 
     emu.regs_mut().rax = STATUS_SUCCESS;
 }
+
+/// `NtCreateThreadEx` — syscall 0xc9.
+/// x64: RCX=`ThreadHandle` (PHANDLE out), RDX=`DesiredAccess`, R8=`ObjectAttributes`,
+///      R9=`ProcessHandle`, `[rsp+0x28]`=`StartRoutine`, `[rsp+0x30]`=`Argument`,
+///      `[rsp+0x38]`=`CreateFlags`, `[rsp+0x40]`=`ZeroBits`, `[rsp+0x48]`=`StackSize`,
+///      `[rsp+0x50]`=`MaxStackSize`, `[rsp+0x58]`=`AttributeList`.
+///
+/// Stub: writes a fake thread handle to *ThreadHandle and returns STATUS_SUCCESS.
+/// The emulator runs single-threaded so no real thread is created.
+pub fn nt_create_thread_ex(emu: &mut Emu) {
+    let thread_handle_ptr = emu.regs().rcx;
+    let _desired_access = emu.regs().rdx;
+    let _process_handle = emu.regs().r9;
+
+    log_orange!(
+        emu,
+        "syscall 0x{:x}: NtCreateThreadEx handle_out: 0x{:x} process: 0x{:x}",
+        WIN64_NTCREATETHREADEX,
+        thread_handle_ptr,
+        _process_handle,
+    );
+
+    if thread_handle_ptr == 0 || !emu.maps.is_mapped(thread_handle_ptr) {
+        emu.regs_mut().rax = STATUS_INVALID_PARAMETER;
+        return;
+    }
+
+    // Write a synthetic handle value (same scheme used by NtCreateEvent etc.).
+    let h = crate::syscall::windows::syscall64::sync::next_handle();
+    let _ = emu.maps.write_qword(thread_handle_ptr, h);
+
+    emu.regs_mut().rax = STATUS_SUCCESS;
+}

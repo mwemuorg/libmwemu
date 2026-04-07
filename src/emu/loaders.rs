@@ -830,6 +830,16 @@ impl Emu {
                     // complete successfully the lists may be empty.  Rebuild them
                     // from the actually-loaded PE images so user code can walk them.
                     peb64::rebuild_ldr_lists(self);
+
+                    // LdrInitializeThunk was expected to bind the main image IAT but
+                    // our emulation does not run LdrpProcessInitializationComplete fully.
+                    // Bind it now so imported functions resolve to real stubs.
+                    let exe_base = self.base;
+                    if let Some(mut pe) = self.pe64.take() {
+                        pe.iat_binding(self, exe_base);
+                        pe.delay_load_binding(self, exe_base);
+                        self.pe64 = Some(pe);
+                    }
                 } else if self.cfg.verbose >= 1 {
                     log::trace!("ssdt: could not resolve ntdll!LdrInitializeThunk");
                 }

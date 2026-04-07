@@ -606,7 +606,7 @@ impl Emu {
             // They must be present in the LDR lists before binding so exports and
             // forwarders can resolve across `kernel32` / `kernelbase`.
             let mut base_dlls: Vec<Lib> = Vec::new();
-            for dll in &["kernel32.dll", "kernelbase.dll"] {
+            for dll in &["kernel32.dll", "kernelbase.dll", "user32.dll", "gdi32.dll", "win32u.dll"] {
                 let filepath = self.cfg.get_maps_folder(dll);
                 if std::path::Path::new(&filepath).exists() {
                     let (base, pe64) = self.map_dll_pe64(&filepath);

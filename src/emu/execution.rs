@@ -1203,6 +1203,20 @@ impl Emu {
                         }
                     }
 
+                    // --- verbose_range activation (-X a,b) ---
+                    if self.cfg.verbose_start != 0 {
+                        let in_range = self.pos >= self.cfg.verbose_start
+                            && (self.cfg.verbose_end == 0 || self.pos <= self.cfg.verbose_end);
+                        if in_range {
+                            if self.cfg.verbose_range_saved.is_none() {
+                                self.cfg.verbose_range_saved = Some(self.cfg.verbose);
+                            }
+                            self.cfg.verbose = 3;
+                        } else if let Some(orig) = self.cfg.verbose_range_saved.take() {
+                            self.cfg.verbose = orig;
+                        }
+                    }
+
                     // --- Exit position ---
                     if self.cfg.exit_position != 0 && self.pos == self.cfg.exit_position {
                         log::trace!("exit position reached");
