@@ -226,14 +226,50 @@ impl Emu {
             self.colors.nc
         );
 
-        // Set PC to return address (already in LR from BL/BLR)
-        self.regs_aarch64_mut().pc = self.regs_aarch64().x[30];
-
         // Dispatch to appropriate platform API handler
         if self.os.is_macos() {
+            // Set PC to return address (already in LR from BL/BLR)
+            self.regs_aarch64_mut().pc = self.regs_aarch64().x[30];
             crate::macosapi::gateway(addr, &name, &symbol, self);
         } else if self.os.is_linux() {
+            // Set PC to return address (already in LR from BL/BLR)
+            self.regs_aarch64_mut().pc = self.regs_aarch64().x[30];
             crate::linuxapi::gateway(addr, &name, &symbol, self);
+        } else if self.os.is_windows() {
+            // emulate winapi mode
+            if self.cfg.emulate_winapi {
+                let api_name = winapi64::kernel32::guess_api_name(self, addr);
+                if !api_name.is_empty() {
+                    if self.cfg.verbose >= 1 {
+                        log_red!(self, "emulating {}", api_name);
+                    }
+                }
+                self.regs_aarch64_mut().pc = addr;
+                return true;
+            }
+
+            if self.skip_apicall {
+                self.its_apicall = Some(addr);
+                return false;
+            }
+
+            // Return via LR, not stack pop
+            self.regs_aarch64_mut().pc = self.regs_aarch64().x[30];
+            self.gateway_return = self.regs_aarch64().x[30];
+
+            let handle_winapi: bool =
+                if let Some(mut hook_fn) = self.hooks.hook_on_winapi_call.take() {
+                    let pc = self.regs_aarch64().pc;
+                    let result = hook_fn(self, pc, addr);
+                    self.hooks.hook_on_winapi_call = Some(hook_fn);
+                    result
+                } else {
+                    true
+                };
+
+            if handle_winapi {
+                winapi64::gateway(addr, &name, self);
+            }
         }
 
         self.force_break = true;

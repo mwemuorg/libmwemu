@@ -54,19 +54,21 @@ fn api_libc_start_main(emu: &mut Emu) {
         emu.colors.nc
     );
 
-    if !emu.cfg.arch.is_x64() {
-        log::warn!(
-            "linuxapi libc: __libc_start_main bridge is only implemented for x86_64 right now"
-        );
-        abi.set_ret(emu, 0);
-        return;
-    }
+    let call_result = if emu.cfg.arch.is_aarch64() {
+        emu.aarch64_call64(main_fn, &[argc, argv, envp])
+    } else {
+        emu.linux_call64(main_fn, &[argc, argv, envp])
+    };
 
-    match emu.linux_call64(main_fn, &[argc, argv, envp]) {
+    match call_result {
         Ok(status) => {
-            // Model glibc startup minimally: after main returns, terminate the
-            // emulated process through the existing exit path.
-            emu.regs_mut().rdi = status;
+            // Model glibc/musl startup minimally: after main returns, set the
+            // exit status in the first argument register and terminate.
+            if emu.cfg.arch.is_aarch64() {
+                emu.regs_aarch64_mut().x[0] = status;
+            } else {
+                emu.regs_mut().rdi = status;
+            }
             api_exit(emu);
         }
         Err(err) => {

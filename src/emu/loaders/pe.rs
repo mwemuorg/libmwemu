@@ -341,14 +341,14 @@ impl Emu {
 
             // 2. entry point logic (relocs + IAT run after PE maps exist; see step 4b below)
             if self.cfg.entry_point == constants::CFG_DEFAULT_BASE {
-                self.regs_mut().rip = base + pe64.opt.address_of_entry_point as u64;
-                log::trace!("entry point at 0x{:x}", self.regs().rip);
+                self.set_pc(base + pe64.opt.address_of_entry_point as u64);
+                log::trace!("entry point at 0x{:x}", self.pc());
             } else {
-                self.regs_mut().rip = self.cfg.entry_point;
+                self.set_pc(self.cfg.entry_point);
                 log::trace!(
                     "entry point at 0x{:x} but forcing it at 0x{:x} by -a flag",
                     base + pe64.opt.address_of_entry_point as u64,
-                    self.regs().rip
+                    self.pc()
                 );
             }
             log::trace!("base: 0x{:x}", base);
@@ -447,7 +447,7 @@ impl Emu {
         if set_entry {
             if !(self.cfg.emulate_winapi && self.cfg.emulate_winapi) {
                 let _space_addr =
-                    peb64::create_ldr_entry(self, base, self.regs().rip, &filename2, 0, 0x2c1950);
+                    peb64::create_ldr_entry(self, base, self.pc(), &filename2, 0, 0x2c1950);
                 let exe_name = self.cfg.exe_name.clone();
                 peb64::update_ldr_entry_base(&exe_name, base, self);
             }

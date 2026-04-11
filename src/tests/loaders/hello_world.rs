@@ -125,12 +125,8 @@ fn hello_mac_arm64() {
     }
 }
 
-/// PARITY GAP: there is no `Macho64::is_macho64_x64` branch in
-/// crates/libmwemu/src/emu/loaders.rs — only the aarch64 path exists. A
-/// Mach-O x86_64 binary currently falls through to the shellcode default and
-/// gets garbage-decoded. Un-ignore once an x86_64 Mach-O loader path lands.
+/// Mach-O x86_64 hello world — loads and detects correct arch.
 #[test]
-#[ignore = "loader gap: no Mach-O x86_64 dispatch in load_code"]
 fn hello_mac_x64() {
     helpers::setup();
     let path = write_tmp("mwemu_hello_mac_x64", HELLO_MAC_X64);
@@ -199,13 +195,8 @@ fn hello_win_x64() {
     }
 }
 
-/// PARITY GAP: `PE64::is_pe64` does not differentiate by machine type, so an
-/// ARM64 PE is currently mis-routed into the x86_64 PE loader and decoded as
-/// x86_64. There is no aarch64 PE dispatch path in load_code. Un-ignore once
-/// the loader recognizes IMAGE_FILE_MACHINE_ARM64 and routes to an aarch64
-/// PE loader.
+/// Windows ARM64 PE hello world — loads and detects correct arch.
 #[test]
-#[ignore = "loader gap: no PE aarch64 dispatch in load_code"]
 fn hello_win_arm64() {
     helpers::setup();
     let path = write_tmp("mwemu_hello_win_arm64.exe", HELLO_WIN_ARM64);

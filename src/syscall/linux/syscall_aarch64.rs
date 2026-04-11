@@ -151,10 +151,46 @@ pub fn gateway(emu: &mut emu::Emu) {
                 emu.colors.light_red, emu.pos, addr, emu.colors.nc
             );
             if addr == 0 {
-                // Query: return current program break (use a high address)
-                emu.regs_aarch64_mut().x[0] = 0x0000_0001_0000_0000;
+                // Query: return current program break
+                // If heap_addr is not set yet, allocate an initial heap region
+                if emu.heap_addr == 0 {
+                    let initial_heap_sz: u64 = 0x100000; // 1MB initial heap
+                    let base = emu
+                        .maps
+                        .alloc(initial_heap_sz)
+                        .expect("linux aarch64 brk: cannot allocate initial heap");
+                    emu.maps
+                        .create_map(
+                            ".heap",
+                            base,
+                            initial_heap_sz,
+                            Permission::READ_WRITE,
+                        )
+                        .expect("linux aarch64 brk: cannot create heap map");
+                    emu.heap_addr = base + initial_heap_sz;
+                    log::info!("  brk: initial heap at 0x{:x}, break=0x{:x}", base, emu.heap_addr);
+                }
+                emu.regs_aarch64_mut().x[0] = emu.heap_addr;
+            } else if addr > emu.heap_addr && emu.heap_addr != 0 {
+                // Extend the break: allocate additional memory
+                let extend_sz = addr - emu.heap_addr;
+                let alloc_sz = (extend_sz + 0xFFF) & !0xFFF; // page-align
+                if let Some(base) = emu.maps.alloc(alloc_sz) {
+                    let _ = emu.maps.create_map(
+                        &format!("brk_ext_{:x}", base),
+                        base,
+                        alloc_sz,
+                        Permission::READ_WRITE,
+                    );
+                    emu.heap_addr = addr;
+                    log::info!("  brk: extended to 0x{:x}", addr);
+                }
+                emu.regs_aarch64_mut().x[0] = addr;
             } else {
-                // Set: just echo back the requested address (accept it)
+                // addr <= current break or heap_addr not set: just accept it
+                if emu.heap_addr == 0 {
+                    emu.heap_addr = addr;
+                }
                 emu.regs_aarch64_mut().x[0] = addr;
             }
         }
@@ -257,9 +293,10 @@ pub fn gateway(emu: &mut emu::Emu) {
         }
 
         SYS_SET_TID_ADDRESS => {
+            let tidptr = emu.regs_aarch64().x[0];
             log::info!(
-                "{}** {} linux aarch64 syscall set_tid_address() => 1 {}",
-                emu.colors.light_red, emu.pos, emu.colors.nc
+                "{}** {} linux aarch64 syscall set_tid_address(tidptr=0x{:x}) => 1 {}",
+                emu.colors.light_red, emu.pos, tidptr, emu.colors.nc
             );
             emu.regs_aarch64_mut().x[0] = 1; // fake tid
         }
@@ -291,17 +328,23 @@ pub fn gateway(emu: &mut emu::Emu) {
         }
 
         SYS_RT_SIGACTION => {
+            let signum = emu.regs_aarch64().x[0];
+            let act = emu.regs_aarch64().x[1];
+            let oldact = emu.regs_aarch64().x[2];
             log::info!(
-                "{}** {} linux aarch64 syscall rt_sigaction() => 0 {}",
-                emu.colors.light_red, emu.pos, emu.colors.nc
+                "{}** {} linux aarch64 syscall rt_sigaction(sig={}, act=0x{:x}, oldact=0x{:x}) => 0 {}",
+                emu.colors.light_red, emu.pos, signum, act, oldact, emu.colors.nc
             );
             emu.regs_aarch64_mut().x[0] = 0;
         }
 
         SYS_RT_SIGPROCMASK => {
+            let how = emu.regs_aarch64().x[0];
+            let set = emu.regs_aarch64().x[1];
+            let oldset = emu.regs_aarch64().x[2];
             log::info!(
-                "{}** {} linux aarch64 syscall rt_sigprocmask() => 0 {}",
-                emu.colors.light_red, emu.pos, emu.colors.nc
+                "{}** {} linux aarch64 syscall rt_sigprocmask(how={}, set=0x{:x}, oldset=0x{:x}) => 0 {}",
+                emu.colors.light_red, emu.pos, how, set, oldset, emu.colors.nc
             );
             emu.regs_aarch64_mut().x[0] = 0;
         }
@@ -336,10 +379,34 @@ pub fn gateway(emu: &mut emu::Emu) {
         }
 
         SYS_UNAME => {
+            let buf = emu.regs_aarch64().x[0];
             log::info!(
-                "{}** {} linux aarch64 syscall uname() => 0 {}",
-                emu.colors.light_red, emu.pos, emu.colors.nc
+                "{}** {} linux aarch64 syscall uname(buf=0x{:x}) => 0 {}",
+                emu.colors.light_red, emu.pos, buf, emu.colors.nc
             );
+            if buf != 0 && emu.maps.is_valid_ptr(buf) {
+                // utsname struct: 6 fields of 65 bytes each = 390 bytes
+                // sysname, nodename, release, version, machine, domainname
+                let fields: [&[u8]; 6] = [
+                    b"Linux",
+                    b"mwemu",
+                    b"5.15.0",
+                    b"#1 SMP",
+                    b"aarch64",
+                    b"(none)",
+                ];
+                for (i, field) in fields.iter().enumerate() {
+                    let offset = buf + (i as u64) * 65;
+                    // zero out the 65-byte field first
+                    for j in 0..65u64 {
+                        emu.maps.write_byte(offset + j, 0);
+                    }
+                    // write the string bytes
+                    for (j, &byte) in field.iter().enumerate() {
+                        emu.maps.write_byte(offset + j as u64, byte);
+                    }
+                }
+            }
             emu.regs_aarch64_mut().x[0] = 0;
         }
 

@@ -291,6 +291,58 @@ impl Emu {
         Ok(self.regs().rax)
     }
 
+    /// Call a 64-bit function using AArch64 AAPCS64 calling convention.
+    /// Args in x0-x7, return value in x0, LR = return address.
+    pub fn aarch64_call64(&mut self, addr: u64, args: &[u64]) -> Result<u64, MwemuError> {
+        let current_pc = self.pc();
+        if addr == current_pc {
+            if addr == 0 {
+                return Err(MwemuError::new(
+                    "return address reached after starting aarch64_call64, change pc.",
+                ));
+            } else {
+                self.set_pc(0);
+            }
+        }
+
+        // Load args into x0-x7
+        let n = args.len().min(8);
+        for i in 0..n {
+            self.regs_aarch64_mut().x[i] = args[i];
+        }
+        if args.len() > 8 {
+            log::warn!("aarch64_call64: more than 8 args not yet supported");
+        }
+
+        // Save SP
+        let orig_sp = self.regs_aarch64().sp;
+
+        // 16-byte align SP
+        let sp = self.regs_aarch64().sp;
+        let aligned_sp = sp & !0xF;
+        self.regs_aarch64_mut().sp = aligned_sp;
+
+        // Set return address in LR (x30)
+        let ret_addr = self.pc();
+        self.regs_aarch64_mut().x[30] = ret_addr;
+
+        // Jump to target
+        self.set_pc(addr);
+
+        // Emulate the function until return address is reached
+        if self.call_depth >= MAX_CALL_DEPTH {
+            return Err(MwemuError::new("call depth limit reached"));
+        }
+        self.call_depth += 1;
+        let result = self.run(Some(ret_addr));
+        self.call_depth -= 1;
+        result?;
+
+        // Restore SP and return x0
+        self.regs_aarch64_mut().sp = orig_sp;
+        Ok(self.regs_aarch64().x[0])
+    }
+
     /// Start emulation until a ret instruction is found.
     /// It will return the address or MwemuError.
     #[inline]
@@ -303,7 +355,7 @@ impl Emu {
     /// Works for both x86 and aarch64. Handles hooks, threading, exit_position.
     #[allow(deprecated)]
     pub fn step(&mut self) -> bool {
-        if !self.os.is_linux() && self.cfg.is_x64() && self.cfg.ssdt_use_ldr_initialize_thunk {
+        if !self.os.is_linux() && self.cfg.arch.is_64bits() && self.cfg.ssdt_use_ldr_initialize_thunk {
             peb64::ensure_peb_system_dependent_07(self);
         }
 
@@ -574,7 +626,7 @@ impl Emu {
             } => *instruction_cache = InstructionCache::new(),
         }
         if !self.os.is_linux()
-            && self.cfg.is_x64()
+            && self.cfg.arch.is_64bits()
             && self.cfg.ssdt_use_ldr_initialize_thunk
             && self.maps.get_map_by_name("peb").is_some()
         {
