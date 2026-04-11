@@ -29,12 +29,8 @@ fn write_tmp(name: &str, bytes: &[u8]) -> std::path::PathBuf {
     p
 }
 
-/// PARITY GAP: panics in crates/libmwemu/src/maps/mem64.rs:576 with
-/// `FAILED to write without permission: addr: 0x0` early in dynamic
-/// ELF32 startup. Un-ignore once ELF32 hello-world steps without
-/// dereferencing a null pointer.
+/// Dynamic ELF32 hello world -- loads and steps without null-pointer write.
 #[test]
-#[ignore = "parity gap: mem64.rs:576 null write on dynamic ELF32 startup"]
 fn hello_linux_x86() {
     helpers::setup();
     let path = write_tmp("mwemu_hello_linux_x86", HELLO_LINUX_X86);
@@ -57,13 +53,12 @@ fn hello_linux_x86() {
     }
 }
 
-/// PARITY GAP: panics in
-/// crates/libmwemu/src/engine/instructions/call.rs:41 with
-/// `attempt to subtract with overflow` while stepping a glibc-dynamic
-/// `printf("hello world")`. Also logs `elf64.strtab overlappss` from
-/// the loader. Un-ignore once dynamic ELF64 x86_64 startup runs cleanly.
+/// PARITY GAP: _start reads argc/argv from stack, but init_linux64()
+/// does not write a proper aux vector. Execution jumps to a stack address
+/// (0x7fffffffe788) which gets intercepted as an unknown API call.
+/// Fix: write argc/argv/envp/auxv to the stack in init_linux64().
 #[test]
-#[ignore = "parity gap: call.rs:41 sub overflow on dynamic ELF64 x86_64"]
+#[ignore = "parity gap: init_linux64 stack setup missing argc/argv/auxv"]
 fn hello_linux_x64() {
     helpers::setup();
     let path = write_tmp("mwemu_hello_linux_x64", HELLO_LINUX_X64);
@@ -82,12 +77,8 @@ fn hello_linux_x64() {
     }
 }
 
-/// PARITY GAP: panics in crates/libmwemu/src/maps/mem64.rs:357 with
-/// `FAILED to read without permission: addr: 0x555555554700` early in
-/// dynamic ELF64 aarch64 startup. Loader also logs `elf64.strtab overlappss`.
-/// Un-ignore once aarch64 dynamic-linker startup maps the right ranges.
+/// Dynamic ELF64 AArch64 hello world — loads and steps correctly.
 #[test]
-#[ignore = "parity gap: mem64.rs:357 perm denied on dynamic ELF64 aarch64"]
 fn hello_linux_arm64() {
     helpers::setup();
     let path = write_tmp("mwemu_hello_linux_arm64", HELLO_LINUX_ARM64);
@@ -141,11 +132,8 @@ fn hello_mac_x64() {
     );
 }
 
-/// PARITY GAP: panics in crates/libmwemu/src/maps/mod.rs:327
-/// `incorrect memory map name` while loading a mingw-clang built PE32.
-/// Un-ignore once PE32 hello-world loads without tripping the maps name check.
+/// Windows PE32 x86 hello world — loads and detects correct arch.
 #[test]
-#[ignore = "parity gap: maps/mod.rs:327 incorrect memory map name on PE32 mingw"]
 fn hello_win_x86() {
     helpers::setup();
     let path = write_tmp("mwemu_hello_win_x86.exe", HELLO_WIN_X86);
@@ -168,15 +156,8 @@ fn hello_win_x86() {
     }
 }
 
-/// PARITY GAP: panics in
-/// crates/libmwemu/src/loaders/pe/pe64/parser.rs:127 with
-/// `pe64 binary not found`. The PE64 loader re-opens the file by name
-/// (`File::open(filename)`) inside `PE64::load`, which fails for the
-/// temp-file path used by this test even though the path was just written.
-/// Un-ignore once the loader works from already-read bytes or resolves paths
-/// robustly.
+/// Windows x86_64 PE hello world — loads and detects correct arch.
 #[test]
-#[ignore = "parity gap: pe64 parser.rs:127 re-opens file by name and fails"]
 fn hello_win_x64() {
     helpers::setup();
     let path = write_tmp("mwemu_hello_win_x64.exe", HELLO_WIN_X64);

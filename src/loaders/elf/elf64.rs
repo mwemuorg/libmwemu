@@ -645,9 +645,12 @@ impl Elf64 {
             let sh_size = self.elf_shdr[i].sh_size;
             let mut sh_addr = self.elf_shdr[i].sh_addr;
 
-            let can_write = self.elf_shdr[i].sh_flags & 0x1 != 0;
-            let can_execute = self.elf_shdr[i].sh_flags & 0x4 != 0;
-            let can_read = self.elf_shdr[i].sh_flags & 0x2 != 0;
+            let sh_flags = self.elf_shdr[i].sh_flags;
+            // SHF_ALLOC (0x2) means the section occupies memory at runtime and should be readable
+            let is_alloc = sh_flags & 0x2 != 0;
+            let can_write = sh_flags & 0x1 != 0; // SHF_WRITE
+            let can_execute = sh_flags & 0x4 != 0; // SHF_EXECINSTR
+            let can_read = is_alloc;
             let permission = Permission::from_flags(can_read, can_write, can_execute);
 
             //TODO: align sh_size to page size by extending the size, something like:
@@ -706,6 +709,12 @@ impl Elf64 {
             // map if its vaddr is on a PT_LOAD program
             if self.is_loadable(sh_addr) || !dynamic_linking {
                 if sname == ".shstrtab" || sname == ".tbss" {
+                    continue;
+                }
+
+                // Skip non-allocated sections (e.g. .symtab, .strtab) — they are metadata
+                // and should not be mapped into the runtime address space.
+                if !is_alloc {
                     continue;
                 }
 

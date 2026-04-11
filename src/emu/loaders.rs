@@ -36,7 +36,7 @@ impl Emu {
             log::trace!("elf32 detected.");
             let mut elf32 = Elf32::parse(filename).unwrap();
             elf32.load(&mut self.maps);
-            self.regs_mut().rip = elf32.elf_hdr.e_entry.into();
+            self.regs_mut().rip = (elf32.elf_hdr.e_entry as u64) + elf32.base();
             let stack_sz = 0x30000;
             let stack = self.alloc("stack", stack_sz, Permission::READ_WRITE);
             self.regs_mut().rsp = stack + (stack_sz / 2);
@@ -108,6 +108,16 @@ impl Emu {
             let clear_flags = false; // TODO: this needs to be more dynamic, like if we have a flag set via args or not
             self.cfg.arch = Arch::X86;
             self.os = crate::arch::OperatingSystem::Windows;
+
+            // Set maps folder for Windows DLLs (try repo root, then relative from crate)
+            if self.cfg.maps_folder.is_empty() {
+                if std::path::Path::new("maps/windows/x86").exists() {
+                    self.cfg.maps_folder = "maps/windows/x86/".to_string();
+                } else if std::path::Path::new("../../maps/windows/x86").exists() {
+                    self.cfg.maps_folder = "../../maps/windows/x86/".to_string();
+                }
+            }
+
             self.init_win32(clear_registers, clear_flags);
             let (base, _pe_off) = self.load_pe32(filename, true, 0);
             let ep = self.regs().rip;
@@ -152,6 +162,16 @@ impl Emu {
             let clear_flags = false; // TODO: this needs to be more dynamic, like if we have a flag set via args or not
             self.cfg.arch = Arch::X86_64;
             self.os = crate::arch::OperatingSystem::Windows;
+
+            // Set maps folder for Windows DLLs (try repo root, then relative from crate)
+            if self.cfg.maps_folder.is_empty() {
+                if std::path::Path::new("maps/windows/x86_64").exists() {
+                    self.cfg.maps_folder = "maps/windows/x86_64/".to_string();
+                } else if std::path::Path::new("../../maps/windows/x86_64").exists() {
+                    self.cfg.maps_folder = "../../maps/windows/x86_64/".to_string();
+                }
+            }
+
             self.init_win32(clear_registers, clear_flags);
             let (base, _pe_off) = self.load_pe64(filename, true, 0);
             let ep = self.regs().rip;
