@@ -142,11 +142,11 @@ impl Emu {
         }
 
         if self.cfg.arch.is_aarch64() {
-            candidates.push(format!("maps/maps_linux_aarch64/{}", lib_name));
-            candidates.push(format!("../../maps/maps_linux_aarch64/{}", lib_name));
+            candidates.push(format!("maps/linux/aarch64/{}", lib_name));
+            candidates.push(format!("../../maps/linux/aarch64/{}", lib_name));
         } else {
-            candidates.push(format!("maps/maps_linux/{}", lib_name));
-            candidates.push(format!("../../maps/maps_linux/{}", lib_name));
+            candidates.push(format!("maps/linux/x86_64/{}", lib_name));
+            candidates.push(format!("../../maps/linux/x86_64/{}", lib_name));
         }
 
         candidates

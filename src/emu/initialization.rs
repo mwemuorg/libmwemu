@@ -367,7 +367,7 @@ impl Emu {
             for result in rdr.records() {
                 let record = result.expect("error parsing banzai.csv");
                 let api = &record[0];
-                let params: i32 = record[1].parse().expect("error parsing maps32/banzai.csv");
+                let params: i32 = record[1].parse().expect("error parsing banzai.csv");
 
                 self.banzai.add(api, params);
             }

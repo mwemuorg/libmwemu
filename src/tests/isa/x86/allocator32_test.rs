@@ -9,7 +9,7 @@ pub fn allocator32_test() {
     helpers::setup();
 
     let mut emu = emu32();
-    emu.cfg.maps_folder = "../../maps/maps32/".to_string();
+    emu.cfg.maps_folder = "../../maps/windows/x86/".to_string();
     emu.maps.clear();
     emu.init_win32(false, false);
 

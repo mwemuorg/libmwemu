@@ -8,7 +8,7 @@ pub fn logic_test() {
     helpers::setup();
 
     let mut emu = emu64();
-    emu.cfg.maps_folder = "../../maps/maps64/".to_string();
+    emu.cfg.maps_folder = "../../maps/windows/x86_64/".to_string();
 
     let num: u64 = 0x1234_5678_9ABC_DEF0;
     let shift: u64 = 12;

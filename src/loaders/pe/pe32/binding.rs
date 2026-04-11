@@ -96,7 +96,7 @@ impl PE32 {
             }
 
             if winapi32::kernel32::load_library(emu, &iim_name) == 0 {
-                log::trace!("cannot found the library `{}` on maps32/", &iim_name);
+                log::trace!("cannot find the library `{}` in maps/windows/x86/", &iim_name);
                 continue;
             } else if dbg {
                 log::trace!("library `{}` loaded", &iim_name);

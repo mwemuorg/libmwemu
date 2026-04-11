@@ -7,7 +7,7 @@ pub fn sc64win_metasploit() {
     helpers::setup();
 
     let mut emu = emu64();
-    emu.cfg.maps_folder = "../../maps/maps64/".to_string();
+    emu.cfg.maps_folder = "../../maps/windows/x86_64/".to_string();
 
     let sample = "../../test/sc64win_metasploit.bin";
     emu.load_code(sample);

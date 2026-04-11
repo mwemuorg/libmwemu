@@ -44,7 +44,7 @@ fn sc32win_donut_emulation_throughput_regression_guard() {
         .unwrap_or(DEFAULT_MIN_IPS);
 
     let mut emu = emu32();
-    emu.cfg.maps_folder = "../../maps/maps32/".to_string();
+    emu.cfg.maps_folder = "../../maps/windows/x86/".to_string();
 
     let sample = "../../test/sc32win_donut.bin";
     emu.load_code(sample);
@@ -96,7 +96,7 @@ fn benchmark32win_donut() {
 
     let mut emu = emu32();
     emu.cfg.maps_folder = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../maps/maps32")
+        .join("../../maps/windows/x86")
         .to_string_lossy()
         .into_owned();
     if !emu.cfg.maps_folder.ends_with('/') {
@@ -158,7 +158,7 @@ fn benchmark64with_enigma() {
 
     let mut emu = emu64();
     emu.cfg.maps_folder = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../maps/maps64")
+        .join("../../maps/windows/x86_64")
         .to_string_lossy()
         .into_owned();
     if !emu.cfg.maps_folder.ends_with('/') {

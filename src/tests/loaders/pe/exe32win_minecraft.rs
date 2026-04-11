@@ -7,7 +7,7 @@ pub fn exe32win_minecraft() {
     helpers::setup();
 
     let mut emu = emu32();
-    emu.cfg.maps_folder = "../../maps/maps32/".to_string();
+    emu.cfg.maps_folder = "../../maps/windows/x86/".to_string();
 
     let sample = "../../test/exe32win_minecraft.bin";
     emu.load_code(sample);

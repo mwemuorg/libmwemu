@@ -7,7 +7,7 @@ pub fn sc32win_veryobfus() {
     helpers::setup();
 
     let mut emu = emu32();
-    emu.cfg.maps_folder = "../../maps/maps32/".to_string();
+    emu.cfg.maps_folder = "../../maps/windows/x86/".to_string();
 
     let sample = "../../test/sc32win_veryobfus.bin";
     emu.load_code(sample);

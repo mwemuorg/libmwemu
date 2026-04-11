@@ -6,7 +6,7 @@ fn test_mingw32() {
     helpers::setup();
 
     let mut emu = emu32();
-    emu.cfg.maps_folder = "../../maps/maps32/".to_string();
+    emu.cfg.maps_folder = "../../maps/windows/x86/".to_string();
 
     let sample = "../../test/exe32win_mingw.bin";
     emu.load_code(sample);
@@ -21,7 +21,7 @@ fn test_mingw64() {
     helpers::setup();
 
     let mut emu = emu64();
-    emu.cfg.maps_folder = "../../maps/maps64/".to_string();
+    emu.cfg.maps_folder = "../../maps/windows/x86_64/".to_string();
 
     let sample = "../../test/exe64win_mingw.bin";
     emu.load_code(sample);

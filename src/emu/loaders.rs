@@ -62,10 +62,10 @@ impl Emu {
 
             // Set maps folder for macOS dylibs (try repo root, then relative from crate)
             if self.cfg.maps_folder.is_empty() {
-                if std::path::Path::new("maps/maps_macos").exists() {
-                    self.cfg.maps_folder = "maps/maps_macos/".to_string();
-                } else if std::path::Path::new("../../maps/maps_macos").exists() {
-                    self.cfg.maps_folder = "../../maps/maps_macos/".to_string();
+                if std::path::Path::new("maps/macos/aarch64").exists() {
+                    self.cfg.maps_folder = "maps/macos/aarch64/".to_string();
+                } else if std::path::Path::new("../../maps/macos/aarch64").exists() {
+                    self.cfg.maps_folder = "../../maps/macos/aarch64/".to_string();
                 }
             }
 
@@ -80,10 +80,10 @@ impl Emu {
 
             // Set maps folder for macOS dylibs (try repo root, then relative from crate)
             if self.cfg.maps_folder.is_empty() {
-                if std::path::Path::new("maps/maps_macos").exists() {
-                    self.cfg.maps_folder = "maps/maps_macos/".to_string();
-                } else if std::path::Path::new("../../maps/maps_macos").exists() {
-                    self.cfg.maps_folder = "../../maps/maps_macos/".to_string();
+                if std::path::Path::new("maps/macos/x86_64").exists() {
+                    self.cfg.maps_folder = "maps/macos/x86_64/".to_string();
+                } else if std::path::Path::new("../../maps/macos/x86_64").exists() {
+                    self.cfg.maps_folder = "../../maps/macos/x86_64/".to_string();
                 }
             }
 
