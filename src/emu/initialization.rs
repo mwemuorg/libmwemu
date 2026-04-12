@@ -418,6 +418,77 @@ impl Emu {
         self.init_stack_aarch64();
     }
 
+    /// Write the Linux initial stack layout that _start expects.
+    ///
+    /// The kernel places this on the stack before jumping to the ELF entry point:
+    ///   [SP+0]  argc
+    ///   [SP+8]  argv[0]  (pointer to program name)
+    ///   [SP+16] NULL     (argv terminator)
+    ///   [SP+24] NULL     (envp terminator)
+    ///   auxv[]: AT_PHDR, AT_PHENT, AT_PHNUM, AT_PAGESZ, AT_ENTRY, AT_NULL
+    pub fn write_linux_stack_layout(
+        &mut self,
+        entry: u64,
+        phdr_addr: u64,
+        phentsize: u16,
+        phnum: u16,
+    ) {
+        let sp = if self.cfg.arch.is_aarch64() {
+            self.regs_aarch64().sp
+        } else {
+            self.regs().rsp
+        };
+
+        // Write a program name string above the stack layout area
+        let prog_name_addr = sp + 0x100;
+        let prog_name = b"prog\0";
+        for (i, &b) in prog_name.iter().enumerate() {
+            self.maps.write_byte(prog_name_addr + i as u64, b);
+        }
+
+        let mut off = sp;
+
+        // argc = 1
+        self.maps.write_qword(off, 1);
+        off += 8;
+
+        // argv[0] = pointer to program name
+        self.maps.write_qword(off, prog_name_addr);
+        off += 8;
+
+        // argv terminator
+        self.maps.write_qword(off, 0);
+        off += 8;
+
+        // envp terminator
+        self.maps.write_qword(off, 0);
+        off += 8;
+
+        // Auxiliary vector entries (each is 16 bytes: type + value)
+        const AT_PHDR: u64 = 3;
+        const AT_PHENT: u64 = 4;
+        const AT_PHNUM: u64 = 5;
+        const AT_PAGESZ: u64 = 6;
+        const AT_ENTRY: u64 = 9;
+        const AT_NULL: u64 = 0;
+
+        let auxv: &[(u64, u64)] = &[
+            (AT_PAGESZ, 4096),
+            (AT_PHDR, phdr_addr),
+            (AT_PHENT, phentsize as u64),
+            (AT_PHNUM, phnum as u64),
+            (AT_ENTRY, entry),
+            (AT_NULL, 0),
+        ];
+
+        for &(atype, aval) in auxv {
+            self.maps.write_qword(off, atype);
+            off += 8;
+            self.maps.write_qword(off, aval);
+            off += 8;
+        }
+    }
+
     /// Initialize macOS aarch64 simulation for Mach-O loading.
     pub fn init_macos_aarch64(&mut self) {
         self.os = crate::arch::OperatingSystem::MacOS;

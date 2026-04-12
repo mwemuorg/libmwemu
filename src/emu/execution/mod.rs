@@ -34,6 +34,7 @@ const MAX_CALL_DEPTH: u32 = 32;
 impl Emu {
     #[inline]
     pub fn stop(&mut self) {
+        self.process_terminated = true;
         self.is_running.store(0, atomic::Ordering::Relaxed);
     }
 
@@ -355,6 +356,10 @@ impl Emu {
     /// Works for both x86 and aarch64. Handles hooks, threading, exit_position.
     #[allow(deprecated)]
     pub fn step(&mut self) -> bool {
+        if self.process_terminated {
+            return false;
+        }
+
         if !self.os.is_linux() && self.cfg.arch.is_64bits() && self.cfg.ssdt_use_ldr_initialize_thunk {
             peb64::ensure_peb_system_dependent_07(self);
         }

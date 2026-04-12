@@ -85,6 +85,16 @@ impl Emu {
             );
         }
 
+        // Write the Linux initial stack layout (argc, argv, envp, auxv)
+        // so _start can read argc/argv and __libc_start_main gets proper args.
+        let phdr_addr = elf64.base + elf64.elf_hdr.e_phoff;
+        self.write_linux_stack_layout(
+            self.pc(),
+            phdr_addr,
+            elf64.elf_hdr.e_phentsize,
+            elf64.elf_hdr.e_phnum,
+        );
+
         self.elf64 = Some(elf64);
     }
 

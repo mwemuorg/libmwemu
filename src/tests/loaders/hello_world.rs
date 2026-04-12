@@ -53,12 +53,8 @@ fn hello_linux_x86() {
     }
 }
 
-/// PARITY GAP: _start reads argc/argv from stack, but init_linux64()
-/// does not write a proper aux vector. Execution jumps to a stack address
-/// (0x7fffffffe788) which gets intercepted as an unknown API call.
-/// Fix: write argc/argv/envp/auxv to the stack in init_linux64().
+/// Dynamic ELF64 x86_64 hello world -- loads and steps with stack layout.
 #[test]
-#[ignore = "parity gap: init_linux64 stack setup missing argc/argv/auxv"]
 fn hello_linux_x64() {
     helpers::setup();
     let path = write_tmp("mwemu_hello_linux_x64", HELLO_LINUX_X64);
