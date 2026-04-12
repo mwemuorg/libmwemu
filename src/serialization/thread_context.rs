@@ -67,8 +67,9 @@ impl From<&ThreadContext> for SerializableThreadContext {
                 call_stack: call_stack.clone(),
             },
             ArchThreadState::AArch64 { .. } => {
-                // TODO: implement aarch64 serialization
-                panic!("aarch64 thread serialization not yet implemented")
+                panic!(
+                    "AArch64 thread serialization is not implemented yet; native dump/load support is still x86/x86_64-only"
+                )
             }
         }
     }

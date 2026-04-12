@@ -9,6 +9,7 @@ use iced_x86::Instruction;
 use serde::{Deserialize, Serialize};
 
 use crate::api::banzai::Banzai;
+use crate::arch::Arch;
 use crate::debug::breakpoint::Breakpoints;
 use crate::utils::colors::Colors;
 use crate::config::Config;
@@ -29,6 +30,7 @@ use crate::windows::structures::MemoryOperation;
 use crate::emu::disassemble::InstructionCache;
 use crate::emu::object_handle::HandleManagement;
 use crate::emu::ArchState;
+use crate::threading::context::ArchThreadState;
 
 #[derive(Serialize, Deserialize)]
 pub struct SerializableEmu {
@@ -195,6 +197,24 @@ impl<'a> From<&'a Emu> for SerializableEmu {
 
 impl From<SerializableEmu> for Emu {
     fn from(serialized: SerializableEmu) -> Self {
+        let current_thread_id = serialized.current_thread_id;
+        let current_regs = serialized.regs;
+        let current_pre_op_regs = serialized.pre_op_regs;
+        let current_post_op_regs = serialized.post_op_regs;
+        let current_flags = serialized.flags;
+        let current_pre_op_flags = serialized.pre_op_flags;
+        let current_post_op_flags = serialized.post_op_flags;
+        let current_eflags = serialized.eflags;
+        let current_fpu = serialized.fpu;
+        let current_seh = serialized.seh;
+        let current_veh = serialized.veh;
+        let current_uef = serialized.uef;
+        let current_eh_ctx = serialized.eh_ctx;
+        let current_tls32 = serialized.tls32;
+        let current_tls64 = serialized.tls64;
+        let current_fls = serialized.fls;
+        let current_fs = serialized.fs;
+        let current_call_stack = serialized.call_stack;
         let trace_file = if let Some(trace_filename) = &serialized.cfg.trace_filename {
             let file = File::open(trace_filename.clone()).unwrap();
             Some(file)
@@ -202,7 +222,7 @@ impl From<SerializableEmu> for Emu {
             None
         };
 
-        Emu {
+        let mut emu = Emu {
             // Configuration & display
             cfg: serialized.cfg.clone(),
             colors: serialized.colors,
@@ -246,7 +266,7 @@ impl From<SerializableEmu> for Emu {
             library_loaded: false,
             // Thread management
             threads: serialized.threads.into_iter().map(|t| t.into()).collect(),
-            current_thread_id: serialized.current_thread_id,
+            current_thread_id,
             main_thread_cont: serialized.main_thread_cont,
             gateway_return: serialized.gateway_return,
             global_locks: GlobalLocks::new(),
@@ -275,7 +295,54 @@ impl From<SerializableEmu> for Emu {
             last_error: 0,
             // Win32 resource management
             handle_management: HandleManagement::new(), // TODO: not yet serialized
+        };
+
+        if let Some(thread) = emu.threads.get_mut(current_thread_id) {
+            if let ArchThreadState::X86 {
+                regs,
+                pre_op_regs,
+                post_op_regs,
+                flags,
+                pre_op_flags,
+                post_op_flags,
+                eflags,
+                fpu,
+                seh,
+                veh,
+                uef,
+                eh_ctx,
+                tls32,
+                tls64,
+                fls,
+                fs,
+                call_stack,
+            } = &mut thread.arch
+            {
+                *regs = current_regs;
+                *pre_op_regs = current_pre_op_regs;
+                *post_op_regs = current_post_op_regs;
+                *flags = current_flags;
+                *pre_op_flags = current_pre_op_flags;
+                *post_op_flags = current_post_op_flags;
+                *eflags = current_eflags;
+                *fpu = current_fpu.into();
+                *seh = current_seh;
+                *veh = current_veh;
+                *uef = current_uef;
+                *eh_ctx = current_eh_ctx;
+                *tls32 = current_tls32;
+                *tls64 = current_tls64;
+                *fls = current_fls;
+                *fs = current_fs;
+                *call_stack = current_call_stack;
+            }
         }
+
+        if matches!(emu.cfg.arch, Arch::X86_64) {
+            emu.maps.is_64bits = true;
+        }
+
+        emu
     }
 }
 

@@ -7,6 +7,8 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::ops::Deref;
 
+use crate::arch::{Arch, OperatingSystem};
+use crate::flags::Flags;
 use crate::maps::mem64::{Mem64, Permission};
 use crate::maps::tlb::TLB;
 use crate::maps::Maps;
@@ -16,9 +18,13 @@ use crate::serialization::maps::SerializableMaps;
 use crate::serialization::pe32::SerializablePE32;
 use crate::serialization::pe64::SerializablePE64;
 
-pub struct MinidumpConverter;
+pub struct MinidumpReader;
 
-impl MinidumpConverter {
+impl MinidumpReader {
+    fn unsupported_aarch64_minidump() -> Box<dyn Error> {
+        "AArch64/ARM64 minidump import is not implemented yet; the current serialization path is still x86/x86_64-centric".into()
+    }
+
     fn get_pe_offset(data: &[u8]) -> Option<usize> {
         if data.len() < 0x3C + 4 {
             return None;
@@ -84,14 +90,15 @@ impl MinidumpConverter {
         let mut mem_slab = Slab::new();
         let mut maps = BTreeMap::new();
         let mut name_map = AHashMap::new();
+        let memory = dump.get_memory().unwrap_or_default();
 
-        // Get memory regions from memory info list
         if let Ok(memory_info) = dump.get_stream::<MinidumpMemoryInfoList>() {
-            let memory = dump.get_memory().unwrap_or_default();
-
             for info in memory_info.iter() {
                 let base_addr = info.raw.base_address;
-                let size = info.raw.region_size;
+                if info.raw.region_size == 0 {
+                    continue;
+                }
+
                 let permission = match info.protection.bits() & MemoryProtection::ACCESS_MASK.bits()
                 {
                     x if x == MemoryProtection::PAGE_NOACCESS.bits() => Permission::NONE,
@@ -107,21 +114,41 @@ impl MinidumpConverter {
                     _ => Permission::READ_WRITE_EXECUTE,
                 };
 
-                // Try to get the actual memory data for this region
-                let mem_data = memory
-                    .memory_at_address(base_addr)
-                    .unwrap()
-                    .bytes()
-                    .to_vec();
+                let Some(mem_region) = memory.memory_at_address(base_addr) else {
+                    continue;
+                };
+
+                let mem_data = mem_region.bytes().to_vec();
+                if mem_data.is_empty() {
+                    continue;
+                }
 
                 let mem_entry = Mem64::new(
                     format!("mem_0x{:016x}", base_addr), // name
                     base_addr,                           // base_addr
-                    base_addr + size,                    // bottom_addr (base + size)
+                    base_addr + mem_data.len() as u64,   // bottom_addr (base + size)
                     mem_data,                            // mem data
                     permission,
                 );
 
+                let slab_key = mem_slab.insert(mem_entry);
+                maps.insert(base_addr, slab_key);
+            }
+        } else {
+            for mem_region in memory.by_addr() {
+                if mem_region.bytes().is_empty() {
+                    continue;
+                }
+
+                let base_addr = mem_region.base_address();
+                let mem_data = mem_region.bytes().to_vec();
+                let mem_entry = Mem64::new(
+                    format!("mem_0x{:016x}", base_addr),
+                    base_addr,
+                    base_addr + mem_data.len() as u64,
+                    mem_data,
+                    Permission::READ_WRITE_EXECUTE,
+                );
                 let slab_key = mem_slab.insert(mem_entry);
                 maps.insert(base_addr, slab_key);
             }
@@ -131,7 +158,6 @@ impl MinidumpConverter {
         if let Ok(modules) = dump.get_stream::<MinidumpModuleList>() {
             for module in modules.iter() {
                 let module_base = module.base_address();
-                let module_size = module.size();
 
                 // Find corresponding memory region that contains this module
                 for (&addr, &slab_key) in &maps {
@@ -155,19 +181,89 @@ impl MinidumpConverter {
         )))
     }
 
+    fn extract_thread_context<T: Deref<Target = [u8]>>(
+        dump: &minidump::Minidump<'static, T>,
+        system_info: &MinidumpSystemInfo,
+    ) -> Result<(Regs64, Flags), Box<dyn Error>> {
+        let threads = dump.get_stream::<MinidumpThreadList>()?;
+        let thread = threads
+            .threads
+            .first()
+            .ok_or("No threads found in minidump")?;
+        let misc = dump.get_stream::<MinidumpMiscInfo>().ok();
+        let context = thread
+            .context(system_info, misc.as_ref())
+            .ok_or("No thread context found in minidump")?;
+
+        let mut regs = Regs64::default();
+        let mut flags = Flags::new();
+
+        match &context.raw {
+            MinidumpRawContext::X86(raw) => {
+                regs.dr0 = raw.dr0 as u64;
+                regs.dr1 = raw.dr1 as u64;
+                regs.dr2 = raw.dr2 as u64;
+                regs.dr3 = raw.dr3 as u64;
+                regs.dr6 = raw.dr6 as u64;
+                regs.dr7 = raw.dr7 as u64;
+                regs.set_eax(raw.eax as u64);
+                regs.set_ebx(raw.ebx as u64);
+                regs.set_ecx(raw.ecx as u64);
+                regs.set_edx(raw.edx as u64);
+                regs.set_esi(raw.esi as u64);
+                regs.set_edi(raw.edi as u64);
+                regs.set_ebp(raw.ebp as u64);
+                regs.set_esp(raw.esp as u64);
+                regs.set_eip(raw.eip as u64);
+                regs.fs = raw.fs as u64;
+                regs.gs = raw.gs as u64;
+                flags.load(raw.eflags);
+            }
+            MinidumpRawContext::Amd64(raw) => {
+                regs.dr0 = raw.dr0;
+                regs.dr1 = raw.dr1;
+                regs.dr2 = raw.dr2;
+                regs.dr3 = raw.dr3;
+                regs.dr6 = raw.dr6;
+                regs.dr7 = raw.dr7;
+                regs.rax = raw.rax;
+                regs.rbx = raw.rbx;
+                regs.rcx = raw.rcx;
+                regs.rdx = raw.rdx;
+                regs.rsi = raw.rsi;
+                regs.rdi = raw.rdi;
+                regs.rbp = raw.rbp;
+                regs.rsp = raw.rsp;
+                regs.rip = raw.rip;
+                regs.r8 = raw.r8;
+                regs.r9 = raw.r9;
+                regs.r10 = raw.r10;
+                regs.r11 = raw.r11;
+                regs.r12 = raw.r12;
+                regs.r13 = raw.r13;
+                regs.r14 = raw.r14;
+                regs.r15 = raw.r15;
+                regs.fs = raw.fs as u64;
+                regs.gs = raw.gs as u64;
+                flags.load(raw.eflags);
+            }
+            MinidumpRawContext::Arm64(_) | MinidumpRawContext::OldArm64(_) => {
+                return Err(Self::unsupported_aarch64_minidump())
+            }
+            _ => return Err("Unsupported minidump CPU context".into()),
+        }
+
+        Ok((regs, flags))
+    }
+
     pub fn from_minidump_file(path: &str) -> Result<SerializableEmu, Box<dyn Error>> {
         let dump = minidump::Minidump::read_path(path)?;
 
         // Get basic streams we need
         let system_info = dump.get_stream::<MinidumpSystemInfo>()?;
-        let exception = dump.get_stream::<MinidumpException>()?;
-        let threads = dump.get_stream::<MinidumpThreadList>()?;
-
-        // Find crashed thread
-        let crashed_thread = threads
-            .threads
-            .first()
-            .ok_or("No threads found in minidump")?;
+        if matches!(system_info.cpu, minidump::system_info::Cpu::Arm64) {
+            return Err(Self::unsupported_aarch64_minidump());
+        }
 
         // Extract PE modules
         let (pe32, pe64) = Self::extract_pe_modules(&dump)?;
@@ -175,15 +271,35 @@ impl MinidumpConverter {
         // Extract memory maps
         let maps = Self::extract_memory_maps(&dump)?;
 
-        // Extract registers - just use defaults for now since context parsing is complex
-        let regs = Regs64::default();
+        // Extract thread context when present.
+        let (regs, flags) = Self::extract_thread_context(&dump, &system_info)?;
 
         // Basic serializable emu with minimal data
         let mut serializable_emu = SerializableEmu::default();
         serializable_emu.set_maps(maps);
         serializable_emu.set_regs(regs);
+        serializable_emu.flags = flags;
+        serializable_emu.pre_op_flags = flags;
+        serializable_emu.post_op_flags = flags;
         serializable_emu.set_pe32(pe32);
         serializable_emu.set_pe64(pe64);
+        serializable_emu.cfg.arch = match system_info.cpu {
+            minidump::system_info::Cpu::X86 => Arch::X86,
+            minidump::system_info::Cpu::X86_64 => Arch::X86_64,
+            minidump::system_info::Cpu::Arm64 => Arch::Aarch64,
+            _ => Arch::X86,
+        };
+        serializable_emu.os = match system_info.os {
+            minidump::system_info::Os::Windows => OperatingSystem::Windows,
+            minidump::system_info::Os::Linux => OperatingSystem::Linux,
+            minidump::system_info::Os::MacOs => OperatingSystem::MacOS,
+            _ => OperatingSystem::Windows,
+        };
+        if let Some(pe64) = &serializable_emu.pe64 {
+            serializable_emu.filename = pe64.filename.clone();
+        } else if let Some(pe32) = &serializable_emu.pe32 {
+            serializable_emu.filename = pe32.filename.clone();
+        }
 
         Ok(serializable_emu)
     }

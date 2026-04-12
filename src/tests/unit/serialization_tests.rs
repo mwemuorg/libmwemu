@@ -1,9 +1,22 @@
 use crate::arch::Arch;
+use crate::maps::mem64::Permission;
+use crate::serialization::Serialization;
+use crate::tests::helpers;
+use minidump::{Minidump, MinidumpModuleList, Module};
+use tempdir::TempDir;
+
+const ELF64_AARCH64_ADD: &[u8] = include_bytes!("../fixtures/elf64_aarch64_add.bin");
+
+fn write_tmp(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(name);
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
 
 #[test]
 fn test_serialization_module_exists() {
     // Just verify the module is accessible
-    let emu = crate::emu64();
+    let _emu = crate::emu64();
     // Serialization exists but we won't test it due to complexity
 }
 
@@ -43,4 +56,169 @@ fn test_emu_32bit_registers() {
 
     assert_eq!(emu.regs().get_eax(), 0x12345678);
     assert_eq!(emu.regs().get_ebx(), 0xABCDEF00);
+}
+
+fn build_test_pe_header(machine: u16) -> Vec<u8> {
+    let mut raw = vec![0u8; 0x200];
+    raw[0] = b'M';
+    raw[1] = b'Z';
+    raw[0x3c..0x40].copy_from_slice(&0x80u32.to_le_bytes());
+    raw[0x80..0x84].copy_from_slice(b"PE\0\0");
+    raw[0x84..0x86].copy_from_slice(&machine.to_le_bytes());
+    raw
+}
+
+#[test]
+fn test_x64_minidump_roundtrip() {
+    let temp_dir = TempDir::new("mwemu_minidump_x64").unwrap();
+    let dump_path = temp_dir.path().join("sample64.dmp");
+
+    let mut emu = crate::emu64();
+    emu.filename = "sample.exe".to_string();
+    emu.cfg.exe_name = "sample.exe".to_string();
+
+    let header = build_test_pe_header(0x8664);
+    let pe_map = emu
+        .maps
+        .create_map("sample.pe", 0x400000, 0x1000, Permission::READ_WRITE)
+        .unwrap();
+    pe_map.memcpy(&header, header.len());
+
+    let text_map = emu
+        .maps
+        .create_map("sample.text", 0x401000, 0x1000, Permission::READ_EXECUTE)
+        .unwrap();
+    text_map.memcpy(&vec![0x90; 0x100], 0x100);
+
+    let stack_map = emu
+        .maps
+        .create_map("stack", 0x200000, 0x2000, Permission::READ_WRITE)
+        .unwrap();
+    stack_map.memcpy(&vec![0x41; 0x200], 0x200);
+
+    emu.regs_mut().rax = 0x1122_3344_5566_7788;
+    emu.regs_mut().rbp = 0x200900;
+    emu.regs_mut().rsp = 0x200800;
+    emu.regs_mut().rip = 0x401020;
+    emu.flags_mut().load(0x246);
+
+    Serialization::dump_to_minidump(&emu, dump_path.to_str().unwrap()).unwrap();
+
+    let dump = Minidump::read_path(&dump_path).unwrap();
+    let modules = dump.get_stream::<MinidumpModuleList>().unwrap();
+    assert_eq!(modules.iter().count(), 1);
+    let module = modules.iter().next().unwrap();
+    assert_eq!(module.base_address(), 0x400000);
+    assert_eq!(module.name.to_string(), "sample.exe");
+
+    let loaded = Serialization::load_from_minidump(dump_path.to_str().unwrap());
+    assert!(loaded.cfg.is_x64());
+    assert_eq!(loaded.regs().rax, 0x1122_3344_5566_7788);
+    assert_eq!(loaded.regs().rbp, 0x200900);
+    assert_eq!(loaded.regs().rsp, 0x200800);
+    assert_eq!(loaded.regs().rip, 0x401020);
+    assert_eq!(loaded.flags().dump(), 0x246);
+    assert_eq!(loaded.maps.read_byte(0x200010), Some(0x41));
+    assert!(loaded.pe64.is_some());
+}
+
+#[test]
+fn test_x86_minidump_roundtrip() {
+    let temp_dir = TempDir::new("mwemu_minidump_x86").unwrap();
+    let dump_path = temp_dir.path().join("sample32.dmp");
+
+    let mut emu = crate::emu32();
+    emu.filename = "sample32.exe".to_string();
+    emu.cfg.exe_name = "sample32.exe".to_string();
+
+    let header = build_test_pe_header(0x014c);
+    let pe_map = emu
+        .maps
+        .create_map("sample32.pe", 0x0040_0000, 0x1000, Permission::READ_WRITE)
+        .unwrap();
+    pe_map.memcpy(&header, header.len());
+
+    let stack_map = emu
+        .maps
+        .create_map("stack", 0x0010_0000, 0x2000, Permission::READ_WRITE)
+        .unwrap();
+    stack_map.memcpy(&vec![0x24; 0x200], 0x200);
+
+    emu.regs_mut().set_eax(0x1234_5678);
+    emu.regs_mut().set_ebp(0x0010_0900);
+    emu.regs_mut().set_esp(0x0010_0800);
+    emu.regs_mut().set_eip(0x0040_1020);
+    emu.flags_mut().load(0x202);
+
+    Serialization::dump_to_minidump(&emu, dump_path.to_str().unwrap()).unwrap();
+
+    let loaded = Serialization::load_from_minidump(dump_path.to_str().unwrap());
+    assert!(!loaded.cfg.is_x64());
+    assert_eq!(loaded.regs().get_eax(), 0x1234_5678);
+    assert_eq!(loaded.regs().get_ebp(), 0x0010_0900);
+    assert_eq!(loaded.regs().get_esp(), 0x0010_0800);
+    assert_eq!(loaded.regs().get_eip(), 0x0040_1020);
+    assert_eq!(loaded.flags().dump(), 0x202);
+    assert_eq!(loaded.maps.read_byte(0x0010_0010), Some(0x24));
+    assert!(loaded.pe32.is_some());
+}
+
+#[test]
+fn test_aarch64_minidump_export_is_not_supported_yet() {
+    let temp_dir = TempDir::new("mwemu_minidump_aarch64").unwrap();
+    let dump_path = temp_dir.path().join("sample_aarch64.dmp");
+
+    let emu = crate::emu_aarch64();
+    let err = Serialization::dump_to_minidump(&emu, dump_path.to_str().unwrap()).unwrap_err();
+
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("x86/x86_64 guests"));
+}
+
+#[test]
+#[ignore = "AArch64 native serialization is not implemented yet"]
+fn test_aarch64_native_serialization_fixture_roundtrip() {
+    helpers::setup();
+
+    let path = write_tmp("mwemu_test_serialize_elf64_aarch64_add.bin", ELF64_AARCH64_ADD);
+
+    let mut emu = crate::emu_aarch64();
+    emu.load_code(path.to_str().unwrap());
+
+    emu.step();
+    emu.step();
+    emu.step();
+    assert_eq!(emu.regs_aarch64().x[2], 2);
+
+    let serialized = Serialization::serialize(&emu);
+    let loaded = Serialization::deserialize(&serialized);
+
+    assert!(loaded.cfg.arch.is_aarch64());
+    assert_eq!(loaded.regs_aarch64().x[2], 2);
+    assert_eq!(loaded.regs_aarch64().pc, emu.regs_aarch64().pc);
+}
+
+#[test]
+#[ignore = "AArch64 minidump import/export is not implemented yet"]
+fn test_aarch64_minidump_fixture_roundtrip() {
+    helpers::setup();
+
+    let sample_path = write_tmp("mwemu_test_minidump_elf64_aarch64_add.bin", ELF64_AARCH64_ADD);
+    let temp_dir = TempDir::new("mwemu_minidump_aarch64_future").unwrap();
+    let dump_path = temp_dir.path().join("elf64_aarch64_add.dmp");
+
+    let mut emu = crate::emu_aarch64();
+    emu.load_code(sample_path.to_str().unwrap());
+
+    emu.step();
+    emu.step();
+    emu.step();
+    assert_eq!(emu.regs_aarch64().x[2], 2);
+
+    Serialization::dump_to_minidump(&emu, dump_path.to_str().unwrap()).unwrap();
+    let loaded = Serialization::load_from_minidump(dump_path.to_str().unwrap());
+
+    assert!(loaded.cfg.arch.is_aarch64());
+    assert_eq!(loaded.regs_aarch64().x[2], 2);
+    assert_eq!(loaded.regs_aarch64().pc, emu.regs_aarch64().pc);
 }
