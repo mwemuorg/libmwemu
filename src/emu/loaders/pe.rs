@@ -293,7 +293,7 @@ impl Emu {
     /// cyclic stuff: [load_pe] -> [iat-binding]  ->  [load_library] -> [load_pe]
     /// Powered by pe64.rs implementation.
     pub fn load_pe64(&mut self, filename: &str, set_entry: bool, force_base: u64) -> (u64, u32) {
-        let is_maps = filename.contains("windows/x86_64/") || filename.contains("maps64/");
+        let is_maps = filename.contains("windows/x86_64/") || filename.contains("windows/aarch64/") || filename.contains("maps64/");
         let map_name = self.filename_to_mapname(filename);
         let filename2 = map_name;
         let mut pe64 = PE64::load(filename);

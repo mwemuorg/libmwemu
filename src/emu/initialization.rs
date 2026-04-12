@@ -803,6 +803,12 @@ impl Emu {
         for dll in &base {
             let filepath = self.cfg.get_maps_folder(dll);
             log::debug!("mapping base lib64: {}", &filepath);
+            assert!(
+                std::path::Path::new(&filepath).exists(),
+                "required base DLL not found: {} (maps_folder={})",
+                filepath,
+                self.cfg.maps_folder
+            );
             let (base, pe64) = self.map_dll_pe64(&filepath);
             let lib = Lib {
                 pe64,
@@ -830,6 +836,12 @@ impl Emu {
         for dll in dependencies {
             let filepath = self.cfg.get_maps_folder(&dll);
             log::debug!("mapping depenency {}", &filepath);
+            assert!(
+                std::path::Path::new(&filepath).exists(),
+                "required dependency DLL not found: {} (maps_folder={})",
+                filepath,
+                self.cfg.maps_folder
+            );
             let (base, pe64) = self.map_dll_pe64(&filepath);
             let lib = Lib {
                 pe64,

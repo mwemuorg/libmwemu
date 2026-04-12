@@ -144,14 +144,37 @@ impl Emu {
             self.cfg.arch = Arch::Aarch64;
             self.os = crate::arch::OperatingSystem::Windows;
             self.maps.is_64bits = true;
-            // Windows ARM64 init/bootstrap is not yet implemented.
-            // The binary is correctly identified; stop here so it does not fall through
-            // to the PE32 or shellcode path.
-            log::warn!(
-                "Windows ARM64 PE loading is not yet fully supported. \
-                 The file was recognized as a Windows AArch64 binary but cannot be emulated yet."
-            );
-            return;
+
+            // Set maps folder for Windows ARM64 DLLs
+            if self.cfg.maps_folder.is_empty() {
+                if std::path::Path::new("maps/windows/aarch64").exists() {
+                    self.cfg.maps_folder = "maps/windows/aarch64/".to_string();
+                } else if std::path::Path::new("../../maps/windows/aarch64").exists() {
+                    self.cfg.maps_folder = "../../maps/windows/aarch64/".to_string();
+                }
+            }
+
+            let clear_registers = false;
+            let clear_flags = false;
+            self.init_win32(clear_registers, clear_flags);
+            let (base, _pe_off) = self.load_pe64(filename, true, 0);
+            let ep = self.pc();
+
+            match self.pe64 {
+                Some(ref pe64) => {
+                    if pe64.is_dll() {
+                        let regs = self.regs_aarch64_mut();
+                        regs.x[0] = base;   // hinstDLL
+                        regs.x[1] = 1;      // fdwReason = DLL_PROCESS_ATTACH
+                        regs.x[2] = 0;      // lpvReserved
+                    }
+                }
+                _ => {
+                    log::error!("No Pe64 found inside self");
+                }
+            }
+
+            self.set_pc(ep);
 
         // PE64 x86_64
         } else if !self.cfg.shellcode

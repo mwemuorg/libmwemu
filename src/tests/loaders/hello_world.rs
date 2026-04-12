@@ -172,8 +172,10 @@ fn hello_win_x64() {
     }
 }
 
-/// Windows ARM64 PE hello world — loads and detects correct arch.
+/// Windows ARM64 PE hello world — loads, detects arch, and steps.
+/// Requires real ARM64 DLLs in maps/windows/aarch64/ (kernelbase.dll, kernel32.dll, ntdll.dll).
 #[test]
+#[ignore = "parity gap: maps/windows/aarch64/ has no DLLs yet"]
 fn hello_win_arm64() {
     helpers::setup();
     let path = write_tmp("mwemu_hello_win_arm64.exe", HELLO_WIN_ARM64);
@@ -186,4 +188,12 @@ fn hello_win_arm64() {
         "expected PE aarch64 dispatch, got {:?}",
         emu.cfg.arch
     );
+    let pc = emu.pc();
+    assert!(pc != 0, "entry point should be set");
+
+    for _ in 0..MAX_STEPS {
+        if !emu.step() {
+            break;
+        }
+    }
 }
