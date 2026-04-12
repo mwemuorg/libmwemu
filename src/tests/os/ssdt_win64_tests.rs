@@ -14,7 +14,7 @@ fn exe64win_msgbox_ssdt_reaches_cli_trace_window() {
     helpers::setup();
 
     let mut emu = emu64();
-    emu.cfg.maps_folder = helpers::maps64_folder();
+    emu.cfg.maps_folder = helpers::win64_maps_folder();
     emu.cfg.emulate_winapi = true; // same behavior as command line --ssdt
 
     let sample = helpers::test_data_path("exe64win_msgbox.bin");
@@ -54,7 +54,7 @@ fn exe64win_msgbox_ssdt_hits_first_windows_syscall() {
     helpers::setup();
 
     let mut emu = emu64();
-    emu.cfg.maps_folder = helpers::maps64_folder();
+    emu.cfg.maps_folder = helpers::win64_maps_folder();
     emu.cfg.emulate_winapi = true;
 
     let sample = helpers::test_data_path("exe64win_msgbox.bin");
@@ -109,7 +109,7 @@ fn exe64win_mingw_ssdt_reaches_early_execution_window() {
     helpers::setup();
 
     let mut emu = emu64();
-    emu.cfg.maps_folder = helpers::maps64_folder();
+    emu.cfg.maps_folder = helpers::win64_maps_folder();
     emu.cfg.emulate_winapi = true; // same behavior as command line --ssdt
 
     let sample = helpers::test_data_path("exe64win_mingw.bin");
@@ -147,7 +147,7 @@ fn ssdt_ldr_initialize_thunk() {
     helpers::setup();
 
     let mut emu = emu64();
-    emu.cfg.maps_folder = helpers::maps64_folder();
+    emu.cfg.maps_folder = helpers::win64_maps_folder();
     emu.cfg.emulate_winapi = true; // --ssdt
     emu.cfg.skip_unimplemented = true; // --banzai: skip unimplemented, keep going
     emu.maps.set_banzai(true);

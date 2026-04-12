@@ -61,10 +61,10 @@ impl Emu {
     /// Download and extract maps folder from specific URL
     fn download_and_extract_maps(&self, folder: &str) -> Result<(), Box<dyn std::error::Error>> {
         let url = match folder {
-            "maps/windows/x86" | "maps/windows/x86/" => {
+            f if f.contains("windows/x86") && !f.contains("x86_64") => {
                 "https://github.com/sha0coder/mwemu/releases/download/maps/maps32.zip"
             }
-            "maps/windows/x86_64" | "maps/windows/x86_64/" => {
+            f if f.contains("windows/x86_64") => {
                 "https://github.com/sha0coder/mwemu/releases/download/maps/maps64.zip"
             }
             _ => return Err(format!("Unknown maps folder: {}", folder).into()),
