@@ -25,7 +25,7 @@ impl Emu {
         let libs = macho.get_libs();
         log::info!("macho64: {} dependent dylibs: {:?}", libs.len(), libs);
 
-        // Stage 2: Load each dylib from maps_macos/
+        // Stage 2: Load each dylib from maps/macos/{arch}/
         let mut export_map: HashMap<String, u64> = HashMap::new();
         for lib_path in &libs {
             // Extract filename from path: "/usr/lib/libSystem.B.dylib" -> "libSystem.B.dylib"
@@ -45,7 +45,7 @@ impl Emu {
                 }
             } else {
                 log::warn!(
-                    "macho64: dylib not found in maps_macos: {} (looked at {})",
+                    "macho64: dylib not found: {} (looked at {})",
                     lib_name,
                     local_path
                 );

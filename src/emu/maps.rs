@@ -4,7 +4,7 @@ use crate::emu::Emu;
 use crate::maps::mem64::Permission;
 
 impl Emu {
-    /// For simulating a windows process space, select the folder with maps32 or maps64 depending upon the arch, do this before loading the binary.
+    /// For simulating a windows process space, select the folder with maps (e.g. maps/windows/x86_64/) depending upon the arch, do this before loading the binary.
     pub fn set_maps_folder(&mut self, folder: &str) {
         //let mut f = folder.to_string();
         //f.push('/');

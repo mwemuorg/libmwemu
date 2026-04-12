@@ -99,7 +99,7 @@ fn resolve_in_module_exports_depth(
 }
 
 /// Resolve `name` preferring the module named in the PE import table (`KERNEL32.DLL`, etc.).
-/// API-set / `ext-ms-*` names are mapped to the backing DLLs used in `maps64` (see `get_dependencies`).
+/// API-set / `ext-ms-*` names are mapped to the backing DLLs used in `maps/windows/` (see `get_dependencies`).
 pub fn resolve_api_name_in_module(emu: &mut emu::Emu, module: &str, name: &str) -> u64 {
     let module_lc = module.trim().to_lowercase();
 
