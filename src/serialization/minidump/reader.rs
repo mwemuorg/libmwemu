@@ -278,9 +278,7 @@ impl MinidumpReader {
         let mut serializable_emu = SerializableEmu::default();
         serializable_emu.set_maps(maps);
         serializable_emu.set_regs(regs);
-        serializable_emu.flags = flags;
-        serializable_emu.pre_op_flags = flags;
-        serializable_emu.post_op_flags = flags;
+        serializable_emu.set_flags(flags);
         serializable_emu.set_pe32(pe32);
         serializable_emu.set_pe64(pe64);
         serializable_emu.cfg.arch = match system_info.cpu {
