@@ -16,7 +16,7 @@ pub fn setup() {
 /// Resolves via `CARGO_MANIFEST_DIR` so tests work even when the current working directory is not `crates/libmwemu`.
 pub fn test_data_path(rel: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test")
+        .join("test")
         .join(rel)
         .to_string_lossy()
         .into_owned()
@@ -25,7 +25,7 @@ pub fn test_data_path(rel: &str) -> String {
 /// Maps folder for 32-bit Windows samples (`maps/windows/x86/`).
 pub fn win32_maps_folder() -> String {
     let mut s = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../maps/windows/x86")
+        .join("maps/windows/x86")
         .to_string_lossy()
         .into_owned();
     if !s.ends_with('/') {
@@ -64,7 +64,7 @@ pub fn set_winver_maps(emu: &mut crate::emu::Emu, version: &str) -> bool {
 /// Maps folder for 64-bit Windows samples (`maps/windows/x86_64/`).
 pub fn win64_maps_folder() -> String {
     let mut s = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../maps/windows/x86_64")
+        .join("maps/windows/x86_64")
         .to_string_lossy()
         .into_owned();
     if !s.ends_with('/') {
